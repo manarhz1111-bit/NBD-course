@@ -609,3 +609,108 @@ The hardest part of this lab was not MongoDB itself but getting the order right:
 
 What I take away is the pattern I ended up using everywhere: **change → read back → assert**. For the important administrative steps, the playbook does not trust that a command worked; it asks the server. The monitoring part taught me a second habit: work out what a graph *should* show before looking at it. When prediction and graph agreed (279 vs ~280 ops/s, ~4.6 KB per operation), I knew the dashboard measured the right thing. When they seemed not to (`insert` at zero while documents were clearly being created), the mismatch taught me something real about how MongoDB counts operations, and adding the Documents/sec panel turned that puzzle into a check.
 
+---
+
+## 10. Changes after teacher review
+
+After the first review, I updated the project according to the teacher's comments and re-tested the affected parts.
+
+### 10.1 Move variables from `group_vars` to role `defaults`
+
+**Review comment:**  
+`group_vars` should contain variables related to inventory groups. Variables that belong to a specific role are better placed inside that role's `defaults`.
+
+**What I changed:**  
+I removed the general `group_vars/all/main.yml` file and moved the role-specific variables into:
+
+- `roles/mongodb/defaults/main.yml`
+- `roles/rbac/defaults/main.yml`
+- `roles/backup/defaults/main.yml`
+- `roles/monitoring/defaults/main.yml`
+
+The encrypted `vault.yml` remains local for secrets, while `vault.yml.example` stays in the repository as a template.
+
+After the change, both playbooks passed syntax validation without relying on the old `group_vars/all/main.yml`.
+
+![Role defaults and syntax check](screenshots/teacher-fix-01-defaults-syntax%281%29.png)
+
+### 10.2 Use Ansible `now()` instead of the external `date` command
+
+**Review comment:**  
+Ansible/Jinja already provides the built-in `now()` function for generating dates and timestamps.
+
+**What I changed:**  
+The backup timestamp is now generated directly in Ansible:
+
+```yaml
+backup_timestamp: "{{ now(utc=true, fmt='%Y%m%d_%H%M%S_%f') }}"
+```
+
+The old external `date` command is no longer used in the active backup workflow.
+
+The new backup was tested successfully and every generated archive was also checked with `mongorestore --dryRun`.
+
+![Backup with now()](screenshots/teacher-fix-02-backup-playbook-2%282%29.png)
+
+### 10.3 Add `backup_db`, one backup playbook, and loops
+
+**Review comment:**  
+It is better to define a `backup_db` variable containing the databases that should be backed up, use one `backup.yml` playbook, and use loops for backup and restore operations.
+
+**What I changed:**  
+I added a dedicated `ansible/backup.yml` playbook.
+
+The managed databases are now defined in one variable:
+
+```yaml
+backup_db:
+  - "{{ mongodb_training_db }}"
+  - "{{ mongodb_library_db }}"
+```
+
+`create.yml` loops over `backup_db` to create and verify backups for every configured database.
+
+Repeated runs create different timestamped directories, so previous backups are preserved instead of overwritten.
+
+![Multiple backups without overwrite](screenshots/teacher-fix-03-multiple-backups-2%281%29.png)
+
+I also added `restore.yml`, which uses the same `backup_db` list and a loop to restore all configured databases.
+
+The restore test successfully processed both:
+
+- `lab1_university_ansible`
+- `lab1_library_ansible`
+
+and finished with `failed=0`.
+
+![Restore loop](screenshots/teacher-fix-08-restore-loop-2%281%29.png)
+
+### 10.4 Recovery was re-tested after the refactoring
+
+To make sure the new backup structure did not break the original recovery requirement, I repeated the collection recovery test.
+
+The `students` collection was deleted and its absence was confirmed:
+
+![students deleted](screenshots/teacher-fix-04-students-deleted%282%29.png)
+
+Then the collection was restored from the new backup. The output shows that `students` was absent before restore and present afterwards, with one document restored successfully and `failed=0`.
+
+![students restored](screenshots/teacher-fix-05-restore-success-2%281%29.png)
+
+A separate `mongosh` check confirmed that the collection was present again:
+
+![students confirmed](screenshots/teacher-fix-06-restore-confirmed%281%29.png)
+
+### 10.5 Final validation
+
+After all review changes, I ran the final syntax checks again:
+
+```text
+playbook: lab1.yml
+playbook: backup.yml
+```
+
+Both completed without syntax errors.
+
+![Final syntax check](screenshots/teacher-fix-09-final-check%281%29.png)
+
