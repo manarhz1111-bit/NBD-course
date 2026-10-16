@@ -609,9 +609,9 @@ The hardest part of this lab was not MongoDB itself but getting the order right:
 
 What I take away is the pattern I ended up using everywhere: **change → read back → assert**. For the important administrative steps, the playbook does not trust that a command worked; it asks the server. The monitoring part taught me a second habit: work out what a graph *should* show before looking at it. When prediction and graph agreed (279 vs ~280 ops/s, ~4.6 KB per operation), I knew the dashboard measured the right thing. When they seemed not to (`insert` at zero while documents were clearly being created), the mismatch taught me something real about how MongoDB counts operations, and adding the Documents/sec panel turned that puzzle into a check.
 
----
-
 ## 10. Changes after teacher review
+
+The sections above document the original submitted version. This section describes the final project state after applying the teacher's review comments.
 
 After the first review, I updated the project according to the teacher's comments and re-tested the affected parts.
 
@@ -632,7 +632,7 @@ The encrypted `vault.yml` remains local for secrets, while `vault.yml.example` s
 
 After the change, both playbooks passed syntax validation without relying on the old `group_vars/all/main.yml`.
 
-![Role defaults and syntax check](screenshots/teacher-fix-01-defaults-syntax%281%29.png)
+![Role defaults and syntax check](screenshots/teacher-fix-01-defaults-syntax.png)
 
 ### 10.2 Use Ansible `now()` instead of the external `date` command
 
@@ -650,7 +650,7 @@ The old external `date` command is no longer used in the active backup workflow.
 
 The new backup was tested successfully and every generated archive was also checked with `mongorestore --dryRun`.
 
-![Backup with now()](screenshots/teacher-fix-02-backup-playbook-2%282%29.png)
+![Backup with now()](screenshots/teacher-fix-02-backup-playbook-ok-2.png)
 
 ### 10.3 Add `backup_db`, one backup playbook, and loops
 
@@ -672,7 +672,7 @@ backup_db:
 
 Repeated runs create different timestamped directories, so previous backups are preserved instead of overwritten.
 
-![Multiple backups without overwrite](screenshots/teacher-fix-03-multiple-backups-2%281%29.png)
+![Multiple backups without overwrite](screenshots/teacher-fix-03-multiple-backups-2.png)
 
 I also added `restore.yml`, which uses the same `backup_db` list and a loop to restore all configured databases.
 
@@ -683,7 +683,7 @@ The restore test successfully processed both:
 
 and finished with `failed=0`.
 
-![Restore loop](screenshots/teacher-fix-08-restore-loop-2%281%29.png)
+![Restore loop](screenshots/teacher-fix-08-restore-loop-2.png)
 
 ### 10.4 Recovery was re-tested after the refactoring
 
@@ -691,15 +691,15 @@ To make sure the new backup structure did not break the original recovery requir
 
 The `students` collection was deleted and its absence was confirmed:
 
-![students deleted](screenshots/teacher-fix-04-students-deleted%282%29.png)
+![students deleted](screenshots/teacher-fix-04-students-deleted.png)
 
 Then the collection was restored from the new backup. The output shows that `students` was absent before restore and present afterwards, with one document restored successfully and `failed=0`.
 
-![students restored](screenshots/teacher-fix-05-restore-success-2%281%29.png)
+![students restored](screenshots/teacher-fix-05-restore-success-2.png)
 
 A separate `mongosh` check confirmed that the collection was present again:
 
-![students confirmed](screenshots/teacher-fix-06-restore-confirmed%281%29.png)
+![students confirmed](screenshots/teacher-fix-06-restore-confirmed.png)
 
 ### 10.5 Final validation
 
@@ -712,5 +712,6 @@ playbook: backup.yml
 
 Both completed without syntax errors.
 
-![Final syntax check](screenshots/teacher-fix-09-final-check%281%29.png)
+![Final syntax check](screenshots/teacher-fix-09-final-check.png)
+
 
