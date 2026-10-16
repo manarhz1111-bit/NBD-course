@@ -1,0 +1,27 @@
+---
+mongodb_port: 27017
+mongodb_bind_ip: "127.0.0.1"
+
+mongodb_db_path: "/var/lib/mongodb"
+mongodb_admin_marker_path: "{{ mongodb_db_path }}/.lab1_ansible_admin_created"
+mongodb_admin_user: "lab1AnsibleAdmin"
+
+mongodb_training_db: "lab1_university_ansible"
+mongodb_library_db: "lab1_library_ansible"
+
+mongodb_reader_role: "lab1ReaderRole"
+mongodb_writer_role: "lab1WriterRole"
+mongodb_library_role: "lab1LibraryRole"
+mongodb_mutable_role: "lab1MutableRole"
+
+mongodb_reader_user: "lab1ReaderUser"
+mongodb_writer_user: "lab1WriterUser"
+mongodb_library_user: "lab1LibrarianUser"
+
+mongodb_grant_demo_user: "lab1GrantDemoUser"
+
+mongodb_students_only_role: "lab1StudentsOnlyRole"
+mongodb_students_user: "lab1StudentsUser"
+
+mongodb_temp_role: "lab1TempRole"
+mongodb_temp_user: "lab1TempUser"
