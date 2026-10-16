@@ -15,3 +15,6 @@ venv/
 .idea/
 *.swp
 .DS_Store
+
+# Project secrets
+ansible/group_vars/all/vault.yml

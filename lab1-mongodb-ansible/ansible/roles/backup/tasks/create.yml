@@ -1,26 +1,21 @@
 ---
-- name: Generate unique timestamp for all-databases backup
-  ansible.builtin.command:
-    argv:
-      - date
-      - "+%Y%m%d_%H%M%S_%3N"
-  register: all_backup_timestamp
-  changed_when: false
-
-- name: Define all-databases backup directory
+- name: Generate backup timestamp with Ansible now()
   ansible.builtin.set_fact:
-    mongodb_all_backup_dir: >-
-      {{ mongodb_backup_root }}/all-{{ all_backup_timestamp.stdout }}
+    backup_timestamp: "{{ now(utc=true, fmt='%Y%m%d_%H%M%S_%f') }}"
 
-- name: Create timestamped directory for all training databases
+- name: Define backup directory
+  ansible.builtin.set_fact:
+    backup_directory: "{{ mongodb_backup_root }}/backup-{{ backup_timestamp }}"
+
+- name: Create timestamped backup directory
   ansible.builtin.file:
-    path: "{{ mongodb_all_backup_dir }}"
+    path: "{{ backup_directory }}"
     state: directory
     owner: root
     group: root
     mode: "0750"
 
-- name: Back up and verify all training databases
+- name: Back up configured MongoDB databases
   block:
     - name: Create secure temporary MongoDB tools credential file
       ansible.builtin.copy:
@@ -32,7 +27,7 @@
         mode: "0600"
       no_log: true
 
-    - name: Back up every training database
+    - name: Create backup archive for each configured database
       ansible.builtin.command:
         argv:
           - mongodump
@@ -42,11 +37,13 @@
           - --authenticationDatabase=admin
           - --config=/run/lab1-mongodb-tools.yml
           - "--db={{ item }}"
-          - "--archive={{ mongodb_all_backup_dir }}/{{ item }}.archive.gz"
+          - "--archive={{ backup_directory }}/{{ item }}.archive.gz"
           - --gzip
-      loop: "{{ mongodb_training_databases }}"
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
 
-    - name: Verify every training database archive is readable
+    - name: Validate every backup archive with a dry run
       ansible.builtin.command:
         argv:
           - mongorestore
@@ -55,34 +52,40 @@
           - "--username={{ mongodb_admin_user }}"
           - --authenticationDatabase=admin
           - --config=/run/lab1-mongodb-tools.yml
-          - "--archive={{ mongodb_all_backup_dir }}/{{ item }}.archive.gz"
+          - "--archive={{ backup_directory }}/{{ item }}.archive.gz"
           - --gzip
           - "--nsInclude={{ item }}.*"
           - --dryRun
-      loop: "{{ mongodb_training_databases }}"
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
       changed_when: false
 
-    - name: Read generated archive information
+    - name: Read generated backup archive information
       ansible.builtin.stat:
-        path: "{{ mongodb_all_backup_dir }}/{{ item }}.archive.gz"
-      loop: "{{ mongodb_training_databases }}"
-      register: all_backup_files
+        path: "{{ backup_directory }}/{{ item }}.archive.gz"
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
+      register: backup_archive_files
 
-    - name: Verify all backup archives exist and are non-empty
+    - name: Verify every backup archive exists and is non-empty
       ansible.builtin.assert:
         that:
           - item.stat.exists
           - item.stat.size | int > 0
         success_msg: "BACKUP VERIFIED: {{ item.item }}"
         fail_msg: "BACKUP FAILED: {{ item.item }}"
-      loop: "{{ all_backup_files.results }}"
+      loop: "{{ backup_archive_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
 
-    - name: Report all training databases backup
+    - name: Report backup result
       ansible.builtin.debug:
         msg:
-          - "ALL TRAINING DATABASES BACKUP VERIFIED"
-          - "Backup directory: {{ mongodb_all_backup_dir }}"
-          - "Databases: {{ mongodb_training_databases | join(', ') }}"
+          - "BACKUP COMPLETED"
+          - "Backup directory: {{ backup_directory }}"
+          - "Databases: {{ backup_db | join(', ') }}"
 
   always:
     - name: Remove temporary MongoDB tools credential file

@@ -1,0 +1,87 @@
+---
+- name: Validate restore backup directory
+  ansible.builtin.assert:
+    that:
+      - restore_backup_dir is defined
+      - restore_backup_dir | length > 0
+    fail_msg: "Pass -e restore_backup_dir=<backup directory>"
+
+- name: Check backup archive for each configured database
+  ansible.builtin.stat:
+    path: "{{ restore_backup_dir }}/{{ item }}.archive.gz"
+  loop: "{{ backup_db }}"
+  loop_control:
+    label: "{{ item }}"
+  register: restore_archive_files
+
+- name: Verify every restore archive exists and is non-empty
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.size | int > 0
+    fail_msg: "Restore archive missing: {{ item.item }}"
+    success_msg: "RESTORE ARCHIVE VERIFIED: {{ item.item }}"
+  loop: "{{ restore_archive_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Restore configured MongoDB databases
+  block:
+    - name: Create secure temporary MongoDB tools credential file
+      ansible.builtin.copy:
+        dest: /run/lab1-mongodb-tools.yml
+        content: |
+          password: {{ vault_mongodb_admin_password | to_json }}
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Validate every archive with a dry run
+      ansible.builtin.command:
+        argv:
+          - mongorestore
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--archive={{ restore_backup_dir }}/{{ item }}.archive.gz"
+          - --gzip
+          - "--nsInclude={{ item }}.*"
+          - --dryRun
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+
+    - name: Restore every configured database
+      ansible.builtin.command:
+        argv:
+          - mongorestore
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--archive={{ restore_backup_dir }}/{{ item }}.archive.gz"
+          - --gzip
+          - "--nsInclude={{ item }}.*"
+          - --drop
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Report restore result
+      ansible.builtin.debug:
+        msg:
+          - "RESTORE COMPLETED"
+          - "Backup directory: {{ restore_backup_dir }}"
+          - "Databases: {{ backup_db | join(', ') }}"
+
+  always:
+    - name: Remove temporary MongoDB tools credential file
+      ansible.builtin.file:
+        path: /run/lab1-mongodb-tools.yml
+        state: absent
+      no_log: true

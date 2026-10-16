@@ -5,29 +5,23 @@
     - part3
     - part3_setup
 
-- name: Back up one MongoDB training database
-  ansible.builtin.import_tasks: single_backup.yml
+- name: Create MongoDB backups
+  ansible.builtin.import_tasks: create.yml
   tags:
     - part3
-    - part3_single
+    - part3_backup
 
-- name: Back up all MongoDB training databases
-  ansible.builtin.import_tasks: all_backups.yml
+- name: Restore all configured MongoDB databases
+  ansible.builtin.import_tasks: restore.yml
   tags:
-    - part3
-    - part3_all
+    - never
+    - part3_restore_all
 
-- name: Demonstrate non-overwriting MongoDB backups
-  ansible.builtin.import_tasks: multiple_backups.yml
+- name: Restore selected MongoDB archive or collection
+  ansible.builtin.import_tasks: restore_archive.yml
   tags:
-    - part3
-    - part3_multiple
-
-- name: Demonstrate MongoDB collection recovery
-  ansible.builtin.import_tasks: restore_collection.yml
-  tags:
-    - part3
-    - part3_restore
+    - never
+    - part3_restore_archive
 
 - name: List retained MongoDB backups
   ansible.builtin.import_tasks: list_backups.yml
