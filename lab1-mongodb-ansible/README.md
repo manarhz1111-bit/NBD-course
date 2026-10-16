@@ -648,9 +648,11 @@ backup_timestamp: "{{ now(utc=true, fmt='%Y%m%d_%H%M%S_%f') }}"
 
 The old external `date` command is no longer used in the active backup workflow.
 
-The new backup was tested successfully and every generated archive was also checked with `mongorestore --dryRun`.
+The new backup workflow was re-tested successfully.
 
-![Backup with now()](screenshots/teacher-fix-02-backup-playbook-ok-2.png)
+![Backup playbook, part 1](screenshots/teacher-fix-02-backup-playbook-1.png)
+
+![Backup playbook, part 2](screenshots/teacher-fix-02-backup-playbook-2.png)
 
 ### 10.3 Add `backup_db`, one backup playbook, and loops
 
@@ -672,7 +674,11 @@ backup_db:
 
 Repeated runs create different timestamped directories, so previous backups are preserved instead of overwritten.
 
-![Multiple backups without overwrite](screenshots/teacher-fix-03-multiple-backups-2.png)
+![Backup state before restore](screenshots/teacher-fix-03-before-restore.png)
+
+![Multiple backups, part 1](screenshots/teacher-fix-03-multiple-backups-1.png)
+
+![Multiple backups, part 2](screenshots/teacher-fix-03-multiple-backups-2.png)
 
 I also added `restore.yml`, which uses the same `backup_db` list and a loop to restore all configured databases.
 
@@ -683,7 +689,9 @@ The restore test successfully processed both:
 
 and finished with `failed=0`.
 
-![Restore loop](screenshots/teacher-fix-08-restore-loop-2.png)
+![Restore loop, part 1](screenshots/teacher-fix-08-restore-loop-1.png)
+
+![Restore loop, part 2](screenshots/teacher-fix-08-restore-loop-2.png)
 
 ### 10.4 Recovery was re-tested after the refactoring
 
@@ -693,25 +701,34 @@ The `students` collection was deleted and its absence was confirmed:
 
 ![students deleted](screenshots/teacher-fix-04-students-deleted.png)
 
-Then the collection was restored from the new backup. The output shows that `students` was absent before restore and present afterwards, with one document restored successfully and `failed=0`.
+Then the collection was restored from the new backup.
 
-![students restored](screenshots/teacher-fix-05-restore-success-2.png)
+![Restore success, part 1](screenshots/teacher-fix-05-restore-success-1.png)
+
+The output shows that `students` was absent before restore and present afterwards, with one document restored successfully and `failed=0`.
+
+![Restore success, part 2](screenshots/teacher-fix-05-restore-success-2.png)
 
 A separate `mongosh` check confirmed that the collection was present again:
 
-![students confirmed](screenshots/teacher-fix-06-restore-confirmed.png)
+![students confirmed after restore](screenshots/teacher-fix-06-restore-confirmed.png)
 
 ### 10.5 Final validation
 
-After all review changes, I ran the final syntax checks again:
+After all review changes, I ran the final syntax checks again.
+
+![Final syntax validation](screenshots/teacher-fix-07-final-syntax.png)
+
+Both playbooks passed syntax validation:
 
 ```text
 playbook: lab1.yml
 playbook: backup.yml
 ```
 
-Both completed without syntax errors.
+The final check also completed successfully without syntax errors.
 
-![Final syntax check](screenshots/teacher-fix-09-final-check.png)
+![Final check](screenshots/teacher-fix-09-final-check.png)
+
 
 
