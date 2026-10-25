@@ -1,0 +1,29 @@
+---
+# Restart one node, wait until it is back in the cluster and the cluster is
+# at least yellow, then continue with the next node.
+
+- name: Restart opensearch@{{ opensearch_node.name }}
+  ansible.builtin.systemd_service:
+    name: "opensearch@{{ opensearch_node.name }}"
+    state: restarted
+    daemon_reload: true
+
+- name: Wait for {{ opensearch_node.name }} HTTPS port
+  ansible.builtin.wait_for:
+    host: "{{ opensearch_api_host }}"
+    port: "{{ opensearch_node.http_port }}"
+    state: started
+    timeout: "{{ opensearch_start_timeout_seconds }}"
+
+- name: Wait until {{ opensearch_node.name }} rejoined and the cluster is not red
+  ansible.builtin.uri:
+    url: "https://{{ opensearch_api_host }}:{{ opensearch_node.http_port }}/_cluster/health?wait_for_nodes={{ opensearch_nodes | length }}&wait_for_status=yellow&timeout=30s"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    status_code: 200
+  register: opensearch_restart_health
+  until: opensearch_restart_health.status == 200
+  retries: 30
+  delay: 10

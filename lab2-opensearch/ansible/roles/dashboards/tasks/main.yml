@@ -1,0 +1,141 @@
+---
+- name: Create OpenSearch Dashboards system group
+  ansible.builtin.group:
+    name: "{{ dashboards_group }}"
+    system: true
+  tags: [part1, part1_dashboards]
+
+- name: Create OpenSearch Dashboards system user
+  ansible.builtin.user:
+    name: "{{ dashboards_user }}"
+    group: "{{ dashboards_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ dashboards_data_dir }}"
+    create_home: false
+  tags: [part1, part1_dashboards]
+
+- name: Download OpenSearch Dashboards {{ dashboards_version }} (checked against the official SHA-512)
+  ansible.builtin.get_url:
+    url: "{{ dashboards_download_url }}"
+    dest: "{{ dashboards_download_dir }}/opensearch-dashboards-{{ dashboards_version }}-linux-x64.tar.gz"
+    checksum: "sha512:{{ dashboards_download_url }}.sha512"
+    mode: "0644"
+    timeout: 120
+  tags: [part1, part1_dashboards]
+
+- name: Unpack OpenSearch Dashboards
+  ansible.builtin.unarchive:
+    src: "{{ dashboards_download_dir }}/opensearch-dashboards-{{ dashboards_version }}-linux-x64.tar.gz"
+    dest: /opt
+    remote_src: true
+    owner: "{{ dashboards_user }}"
+    group: "{{ dashboards_group }}"
+    creates: "{{ dashboards_install_dir }}/bin/opensearch-dashboards"
+  tags: [part1, part1_dashboards]
+
+- name: Point {{ dashboards_home }} at the installed version
+  ansible.builtin.file:
+    src: "{{ dashboards_install_dir }}"
+    dest: "{{ dashboards_home }}"
+    state: link
+  tags: [part1, part1_dashboards]
+
+- name: Create Dashboards config, certs and data directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ dashboards_group }}"
+    mode: "0750"
+  loop:
+    - { path: "{{ dashboards_conf_dir }}", owner: root }
+    - { path: "{{ dashboards_conf_dir }}/certs", owner: root }
+    - { path: "{{ dashboards_data_dir }}", owner: "{{ dashboards_user }}" }
+  loop_control:
+    label: "{{ item.path }}"
+  tags: [part1, part1_dashboards]
+
+- name: Copy node.options (Node.js flags) from the archive
+  ansible.builtin.copy:
+    src: "{{ dashboards_home }}/config/node.options"
+    dest: "{{ dashboards_conf_dir }}/node.options"
+    remote_src: true
+    force: false
+    owner: root
+    group: "{{ dashboards_group }}"
+    mode: "0640"
+  tags: [part1, part1_dashboards]
+
+- name: Install Dashboards HTTPS certificate, key and the lab CA
+  ansible.builtin.copy:
+    src: "{{ opensearch_pki_dir }}/{{ item.src }}"
+    dest: "{{ dashboards_conf_dir }}/certs/{{ item.dest }}"
+    remote_src: true
+    owner: root
+    group: "{{ dashboards_group }}"
+    mode: "0640"
+  loop:
+    - { src: "dashboards.pem", dest: "dashboards.pem" }
+    - { src: "dashboards-key.pem", dest: "dashboards-key.pem" }
+    - { src: "root-ca.pem", dest: "root-ca.pem" }
+  loop_control:
+    label: "{{ item.dest }}"
+  notify: Restart OpenSearch Dashboards
+  tags: [part1, part1_dashboards]
+
+- name: Render opensearch_dashboards.yml
+  ansible.builtin.template:
+    src: opensearch_dashboards.yml.j2
+    dest: "{{ dashboards_conf_dir }}/opensearch_dashboards.yml"
+    owner: root
+    group: "{{ dashboards_group }}"
+    mode: "0640"
+  notify: Restart OpenSearch Dashboards
+  tags: [part1, part1_dashboards]
+
+- name: Install systemd unit for OpenSearch Dashboards
+  ansible.builtin.template:
+    src: opensearch-dashboards.service.j2
+    dest: /etc/systemd/system/opensearch-dashboards.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart OpenSearch Dashboards
+  tags: [part1, part1_dashboards]
+
+- name: Enable and start OpenSearch Dashboards
+  ansible.builtin.systemd_service:
+    name: opensearch-dashboards
+    enabled: true
+    state: started
+    daemon_reload: true
+  tags: [part1, part1_dashboards]
+
+- name: Apply Dashboards handlers now
+  ansible.builtin.meta: flush_handlers
+  tags: [part1, part1_dashboards]
+
+- name: Wait until Dashboards answers over HTTPS (first start takes a few minutes)
+  ansible.builtin.uri:
+    url: "https://{{ opensearch_api_host }}:{{ dashboards_port }}/api/status"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+    status_code: 200
+  register: dashboards_status
+  until: dashboards_status.status == 200
+  retries: "{{ dashboards_start_retries }}"
+  delay: 10
+  tags: [part1, part1_dashboards]
+
+- name: Report Dashboards status
+  ansible.builtin.debug:
+    msg:
+      - "OpenSearch Dashboards {{ dashboards_version }}: https://{{ opensearch_api_host }}:{{ dashboards_port }}"
+      - "Overall state: {{ (dashboards_status.json.status.overall | default({})).state | default('see /api/status') }}"
+      - "Backend: {{ dashboards_opensearch_hosts | join(', ') }} (TLS, verificationMode=full)"
+      - "Login: {{ opensearch_admin_user }} / password from vault.yml"
+  tags: [part1, part1_dashboards]

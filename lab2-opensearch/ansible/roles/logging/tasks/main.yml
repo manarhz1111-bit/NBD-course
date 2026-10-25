@@ -1,0 +1,42 @@
+---
+- name: Deploy nginx page with JSON access log
+  ansible.builtin.import_tasks: nginx.yml
+  tags:
+    - part3
+    - part3_nginx
+
+- name: Configure ISM retention policy
+  ansible.builtin.import_tasks: ism.yml
+  tags:
+    - part3
+    - part3_ism
+
+- name: Create index template and the logs data stream
+  ansible.builtin.import_tasks: template.yml
+  tags:
+    - part3
+    - part3_template
+
+- name: Install and configure Fluent Bit
+  ansible.builtin.import_tasks: fluentbit.yml
+  tags:
+    - part3
+    - part3_fluentbit
+
+- name: Verify that nginx logs reach OpenSearch
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - part3
+    - part3_verify
+
+- name: Generate nginx traffic
+  ansible.builtin.import_tasks: load.yml
+  tags:
+    - never
+    - part3_load
+
+- name: Show backing indices, ISM state and shard placement
+  ansible.builtin.import_tasks: status.yml
+  tags:
+    - part3
+    - part3_status

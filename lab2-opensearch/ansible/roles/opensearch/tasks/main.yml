@@ -1,0 +1,36 @@
+---
+- name: Prepare the host for OpenSearch
+  ansible.builtin.import_tasks: prerequisites.yml
+  tags:
+    - part1
+    - part1_prereq
+
+- name: Install OpenSearch {{ opensearch_version }} from the official archive
+  ansible.builtin.import_tasks: install.yml
+  tags:
+    - part1
+    - part1_install
+
+- name: Generate CA, node, admin and Dashboards certificates
+  ansible.builtin.import_tasks: certificates.yml
+  tags:
+    - part1
+    - part1_certs
+
+- name: Configure every hot and warm node
+  ansible.builtin.import_tasks: configure.yml
+  tags:
+    - part1
+    - part1_config
+
+- name: Start the nodes as systemd services
+  ansible.builtin.import_tasks: service.yml
+  tags:
+    - part1
+    - part1_service
+
+- name: Verify cluster health, hot-warm attributes and TLS
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - part1
+    - part1_verify
