@@ -1,0 +1,17 @@
+---
+# managed-by: lab2-ansible
+# The demo users from the archive (admin/admin, kibanaro, logstash, readall, ...) are removed.
+# Hashes were generated with plugins/opensearch-security/tools/hash.sh.
+_meta:
+  type: "internalusers"
+  config_version: 2
+
+{{ opensearch_admin_user }}:
+  hash: "{{ opensearch_admin_hash }}"
+  reserved: true
+  description: "Cluster administrator"
+
+kibanaserver:
+  hash: "{{ opensearch_kibanaserver_hash }}"
+  reserved: true
+  description: "Service user of OpenSearch Dashboards"

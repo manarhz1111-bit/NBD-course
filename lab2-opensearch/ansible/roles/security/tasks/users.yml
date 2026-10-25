@@ -1,0 +1,51 @@
+---
+- name: Check which users already exist
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_security/api/internalusers/{{ item.name }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    status_code: [200, 404]
+  loop: "{{ security_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: security_user_exists
+
+- name: Create missing users (or reset passwords when security_reset_passwords=true)
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_security/api/internalusers/{{ item.item.name }}"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body:
+      password: "{{ item.item.password }}"
+      description: "{{ item.item.description }}"
+    status_code: [200, 201]
+  loop: "{{ security_user_exists.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when: item.status == 404 or security_reset_passwords | bool
+  changed_when: true
+  no_log: true
+
+- name: Map every role to its user
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_security/api/rolesmapping/{{ item.role }}"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body:
+      users: ["{{ item.name }}"]
+    status_code: [200, 201]
+  loop: "{{ security_users }}"
+  loop_control:
+    label: "{{ item.role }} -> {{ item.name }}"
+  register: security_mapping_put
+  changed_when: security_mapping_put.status == 201

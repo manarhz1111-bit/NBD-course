@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>NBD Lab 2</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 40rem; margin: 4rem auto; padding: 0 1rem; color: #222; }
+    code { background: #f3f3f3; padding: 0.1rem 0.3rem; }
+  </style>
+</head>
+<body>
+  <h1>NBD Lab 2: nginx &rarr; Fluent Bit &rarr; OpenSearch</h1>
+  <p>Every request to this page is written by nginx as one JSON line to
+     <code>{{ nginx_access_log }}</code>, shipped by Fluent Bit and stored in the
+     <code>{{ logs_data_stream }}</code> data stream of the
+     <code>{{ opensearch_cluster_name }}</code> cluster.</p>
+  <p>Logs roll over at {{ logs_rollover_max_size }} or {{ logs_rollover_max_age }} and are deleted after {{ logs_delete_after }}.</p>
+</body>
+</html>

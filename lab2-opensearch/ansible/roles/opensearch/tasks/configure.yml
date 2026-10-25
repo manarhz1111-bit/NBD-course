@@ -1,0 +1,177 @@
+---
+# Every node gets its own config directory (OPENSEARCH_PATH_CONF) that starts as a
+# copy of the archive's config/ and is then overwritten with our files.
+
+- name: Check which nodes are already running
+  ansible.builtin.command:
+    argv: [systemctl, is-active, "opensearch@{{ item.name }}"]
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: opensearch_nodes_state
+  changed_when: false
+  failed_when: false
+
+- name: Create per-node config directories
+  ansible.builtin.file:
+    path: "{{ opensearch_conf_root }}/{{ item.name }}"
+    state: directory
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    mode: "0750"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# Only on the first run (creates=jvm.options); later runs keep the files we manage.
+- name: Seed node config directories from the archive
+  ansible.builtin.command:
+    argv:
+      - cp
+      - -a
+      - "{{ opensearch_home }}/config/."
+      - "{{ opensearch_conf_root }}/{{ item.name }}/"
+    creates: "{{ opensearch_conf_root }}/{{ item.name }}/jvm.options"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create certs directory inside each node config
+  ansible.builtin.file:
+    path: "{{ opensearch_conf_root }}/{{ item.name }}/certs"
+    state: directory
+    owner: root
+    group: "{{ opensearch_group }}"
+    mode: "0750"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Install node certificate, key and CA
+  ansible.builtin.copy:
+    src: "{{ opensearch_pki_dir }}/{{ item.1.src | replace('__NODE__', item.0.name) }}"
+    dest: "{{ opensearch_conf_root }}/{{ item.0.name }}/certs/{{ item.1.dest }}"
+    remote_src: true
+    owner: root
+    group: "{{ opensearch_group }}"
+    mode: "0640"
+  loop: >-
+    {{ opensearch_nodes | product([
+         {'src': '__NODE__.pem', 'dest': 'node.pem'},
+         {'src': '__NODE__-key.pem', 'dest': 'node-key.pem'},
+         {'src': 'root-ca.pem', 'dest': 'root-ca.pem'}]) | list }}
+  loop_control:
+    label: "{{ item.0.name }}/certs/{{ item.1.dest }}"
+  register: opensearch_certs_copy
+
+- name: Render opensearch.yml for every node
+  ansible.builtin.template:
+    src: opensearch.yml.j2
+    dest: "{{ opensearch_conf_root }}/{{ item.name }}/opensearch.yml"
+    owner: root
+    group: "{{ opensearch_group }}"
+    mode: "0640"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  vars:
+    opensearch_node: "{{ item }}"
+  register: opensearch_yml_result
+
+- name: Set JVM heap size
+  ansible.builtin.copy:
+    dest: "{{ opensearch_conf_root }}/{{ item.name }}/jvm.options.d/heap.options"
+    content: |
+      # Managed by Ansible (lab2)
+      -Xms{{ opensearch_heap_size }}
+      -Xmx{{ opensearch_heap_size }}
+    owner: root
+    group: "{{ opensearch_group }}"
+    mode: "0640"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: opensearch_heap_result
+
+- name: Move GC log, error file and heap dumps out of the shared install dir
+  ansible.builtin.replace:
+    path: "{{ opensearch_conf_root }}/{{ item.0.name }}/jvm.options"
+    regexp: "{{ item.1.regexp }}"
+    replace: "{{ item.1.replace | replace('__NODE__', item.0.name) }}"
+  loop: >-
+    {{ opensearch_nodes | product([
+         {'regexp': 'file=logs/gc\.log', 'replace': 'file=' ~ opensearch_log_root ~ '/__NODE__/gc.log'},
+         {'regexp': 'ErrorFile=logs/', 'replace': 'ErrorFile=' ~ opensearch_log_root ~ '/__NODE__/'},
+         {'regexp': 'HeapDumpPath=data$', 'replace': 'HeapDumpPath=' ~ opensearch_data_root ~ '/__NODE__'}]) | list }}
+  loop_control:
+    label: "{{ item.0.name }}: {{ item.1.regexp }}"
+  register: opensearch_jvm_result
+
+- name: Render security plugin config.yml and roles_mapping.yml
+  ansible.builtin.template:
+    src: "security/{{ item.1 }}.j2"
+    dest: "{{ opensearch_conf_root }}/{{ item.0.name }}/opensearch-security/{{ item.1 }}"
+    owner: root
+    group: "{{ opensearch_group }}"
+    mode: "0640"
+  loop: "{{ opensearch_nodes | product(['config.yml', 'roles_mapping.yml']) | list }}"
+  loop_control:
+    label: "{{ item.0.name }}/opensearch-security/{{ item.1 }}"
+
+- name: Check whether internal_users.yml is already ours (demo users removed)
+  ansible.builtin.command:
+    argv:
+      - grep
+      - -q
+      - "managed-by: lab2-ansible"
+      - "{{ opensearch_conf_root }}/{{ item.name }}/opensearch-security/internal_users.yml"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: opensearch_users_marker
+  changed_when: false
+  failed_when: false
+
+- name: Replace demo internal users with admin and kibanaserver
+  when: opensearch_users_marker.results | selectattr('rc', 'ne', 0) | list | length > 0
+  block:
+    - name: Hash initial passwords with the security plugin tool
+      ansible.builtin.command:
+        argv:
+          - bash
+          - "{{ opensearch_home }}/plugins/opensearch-security/tools/hash.sh"
+          - -p
+          - "{{ item }}"
+      environment:
+        OPENSEARCH_JAVA_HOME: "{{ opensearch_home }}/jdk"
+      loop:
+        - "{{ vault_opensearch_admin_password }}"
+        - "{{ vault_kibanaserver_password }}"
+      register: opensearch_password_hashes
+      changed_when: false
+      no_log: true
+
+    - name: Write internal_users.yml
+      ansible.builtin.template:
+        src: security/internal_users.yml.j2
+        dest: "{{ opensearch_conf_root }}/{{ item.item.name }}/opensearch-security/internal_users.yml"
+        owner: root
+        group: "{{ opensearch_group }}"
+        mode: "0640"
+      loop: "{{ opensearch_users_marker.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      when: item.rc != 0
+      vars:
+        opensearch_admin_hash: "{{ opensearch_password_hashes.results[0].stdout_lines | select('match', '^\\$2') | last }}"
+        opensearch_kibanaserver_hash: "{{ opensearch_password_hashes.results[1].stdout_lines | select('match', '^\\$2') | last }}"
+      no_log: true
+
+- name: Remember whether running nodes must be restarted
+  ansible.builtin.set_fact:
+    opensearch_restart_needed: >-
+      {{
+        (opensearch_yml_result is changed or opensearch_heap_result is changed
+         or opensearch_jvm_result is changed or opensearch_certs_copy is changed)
+        and (opensearch_nodes_state.results | selectattr('rc', 'eq', 0) | list | length > 0)
+      }}

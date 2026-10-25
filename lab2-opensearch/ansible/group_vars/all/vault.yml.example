@@ -1,0 +1,11 @@
+---
+# Template for group_vars/all/vault.yml (secrets only; everything else is in role defaults).
+#   cp vault.yml.example vault.yml && ansible-vault encrypt vault.yml
+#
+# Users created through the Security REST API must pass its password check:
+# at least 12 characters and "strong" by zxcvbn (long random passwords are fine).
+vault_opensearch_admin_password: "CHANGE_ME"
+vault_kibanaserver_password: "CHANGE_ME"
+vault_logs_writer_password: "CHANGE_ME"
+vault_logs_reader_password: "CHANGE_ME"
+vault_monitor_password: "CHANGE_ME"

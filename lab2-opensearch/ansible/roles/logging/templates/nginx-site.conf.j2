@@ -1,0 +1,15 @@
+# Managed by Ansible (lab2)
+server {
+    listen {{ nginx_site_port }};
+    server_name lab2.local;
+
+    root {{ nginx_site_root }};
+    index index.html;
+
+    access_log {{ nginx_access_log }} lab2_json;
+    error_log /var/log/nginx/lab2_error.log warn;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}

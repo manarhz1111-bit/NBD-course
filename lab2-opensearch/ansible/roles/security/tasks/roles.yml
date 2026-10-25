@@ -1,0 +1,20 @@
+---
+- name: Create or update role through the Security REST API
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_security/api/roles/{{ item.name }}"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body:
+      description: "{{ item.description }}"
+      cluster_permissions: "{{ item.cluster_permissions }}"
+      index_permissions: "{{ item.index_permissions }}"
+    status_code: [200, 201]
+  loop: "{{ security_roles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: security_role_put
+  changed_when: security_role_put.status == 201

@@ -1,0 +1,22 @@
+---
+dashboards_version: "{{ opensearch_version }}"
+dashboards_download_url: "https://artifacts.opensearch.org/releases/bundle/opensearch-dashboards/{{ dashboards_version }}/opensearch-dashboards-{{ dashboards_version }}-linux-x64.tar.gz"
+dashboards_download_dir: "/opt/src"
+dashboards_install_dir: "/opt/opensearch-dashboards-{{ dashboards_version }}"
+dashboards_home: "/opt/opensearch-dashboards"
+dashboards_conf_dir: "/etc/opensearch-dashboards"
+dashboards_data_dir: "/var/lib/opensearch-dashboards"
+
+dashboards_user: "opensearch-dashboards"
+dashboards_group: "opensearch-dashboards"
+
+# 127.0.0.1 = only from the VM itself; set 0.0.0.0 to open it from the host machine.
+dashboards_bind_host: "127.0.0.1"
+dashboards_port: 5601
+
+# Dashboards talks only to the hot nodes (coordinating + ingest).
+dashboards_opensearch_hosts: >-
+  {{ opensearch_nodes | selectattr('temp', 'eq', 'hot')
+     | map(attribute='http_port') | map('regex_replace', '^', 'https://' ~ opensearch_api_host ~ ':') | list }}
+
+dashboards_start_retries: 40

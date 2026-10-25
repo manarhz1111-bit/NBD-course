@@ -1,0 +1,45 @@
+---
+# The plugin itself is installed by the opensearch role before the first start
+# (installing it later would need a restart of every node).
+
+- name: Apply Prometheus exporter settings
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_cluster/settings"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body:
+      persistent: "{{ prometheus_plugin_settings }}"
+  changed_when: false
+
+- name: Scrape every node as the monitoring user
+  ansible.builtin.uri:
+    url: "https://{{ opensearch_api_host }}:{{ item.http_port }}/_prometheus/metrics"
+    user: "{{ monitor_user }}"
+    password: "{{ vault_monitor_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: plugin_scrape
+  no_log: true
+
+- name: Verify every node exports its own metrics
+  ansible.builtin.assert:
+    that:
+      - item.status == 200
+      - "'opensearch_cluster_status' in item.content"
+      - "('node=\"' ~ item.item.name ~ '\"') in item.content"
+      - "'opensearch_jvm_mem_heap_used_percent' in item.content"
+    success_msg: >-
+      EXPORTER VERIFIED: {{ item.item.name }} ({{ item.item.temp }})
+      {{ item.content | regex_findall('(?m)^opensearch_\w+') | unique | length }} metric names,
+      {{ item.content.splitlines() | reject('match', '#') | list | length }} samples
+  loop: "{{ plugin_scrape.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"

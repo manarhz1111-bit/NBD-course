@@ -1,0 +1,123 @@
+---
+- name: Install Grafana package prerequisites
+  ansible.builtin.apt:
+    name: [adduser, libfontconfig1, musl]
+    state: present
+    update_cache: true
+
+- name: Download Grafana OSS {{ grafana_version }}
+  ansible.builtin.get_url:
+    url: "https://mirror.yandex.ru/mirrors/packages.grafana.com/oss/deb/pool/main/g/grafana/grafana_{{ grafana_version }}_{{ grafana_build }}_linux_amd64.deb"
+    dest: "/opt/src/grafana_{{ grafana_version }}_linux_amd64.deb"
+    checksum: "sha256:{{ grafana_sha256 }}"
+    mode: "0644"
+
+- name: Install Grafana OSS
+  ansible.builtin.apt:
+    deb: "/opt/src/grafana_{{ grafana_version }}_linux_amd64.deb"
+    state: present
+
+- name: Bind Grafana to localhost and set the port
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: '^;?http_addr =', line: 'http_addr = 127.0.0.1' }
+    - { regexp: '^;?http_port =', line: 'http_port = {{ grafana_port }}' }
+  notify: Restart Grafana
+
+- name: Create provisioning and dashboard directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+  loop:
+    - /etc/grafana/provisioning/datasources
+    - /etc/grafana/provisioning/dashboards
+    - /var/lib/grafana/nbd-lab2-dashboards
+
+- name: Check whether Lab 1 Grafana datasource exists
+  ansible.builtin.stat:
+    path: /etc/grafana/provisioning/datasources/prometheus-lab1.yml
+  register: grafana_lab1_datasource_file
+
+- name: Provision Prometheus datasource
+  ansible.builtin.template:
+    src: grafana-datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus-lab2.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Provision dashboard provider
+  ansible.builtin.template:
+    src: grafana-dashboard-provider.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/nbd-lab2.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Provision OpenSearch dashboard
+  ansible.builtin.copy:
+    src: opensearch-dashboard.json
+    dest: /var/lib/grafana/nbd-lab2-dashboards/nbd-lab2-opensearch.json
+    owner: root
+    group: grafana
+    mode: "0640"
+
+- name: Read Lab 2 dashboard file
+  ansible.builtin.slurp:
+    src: /var/lib/grafana/nbd-lab2-dashboards/nbd-lab2-opensearch.json
+  register: grafana_dashboard_file
+
+- name: Verify Lab 2 dashboard file
+  ansible.builtin.assert:
+    that:
+      - dashboard_json.uid == "nbd-lab2-opensearch"
+      - dashboard_json.title == "OpenSearch Hot-Warm - Lab 2"
+      - dashboard_json.panels | length == 25
+    success_msg: "Lab 2 dashboard JSON verified: 25 panels"
+  vars:
+    dashboard_json: "{{ grafana_dashboard_file.content | b64decode | from_json }}"
+
+- name: Remove legacy Lab 2 dashboard from shared directory
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards/nbd-lab2-opensearch.json
+    state: absent
+  notify: Restart Grafana
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    enabled: true
+    state: started
+
+- name: Apply Grafana handlers now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Grafana health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ grafana_port }}/api/health"
+    return_content: true
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 20
+  delay: 3
+
+- name: Ask Prometheus for the cluster status the dashboard shows
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/api/v1/query?query=max(opensearch_cluster_status)"
+    return_content: true
+  register: prometheus_cluster_status
+
+- name: Report Grafana status
+  ansible.builtin.debug:
+    msg:
+      - "Grafana {{ grafana_version }}: http://127.0.0.1:{{ grafana_port }} ({{ grafana_health.json.database | default('?') }})"
+      - "Dashboard file: nbd-lab2-opensearch (25 panels verified locally)"
+      - "max(opensearch_cluster_status) = {{ prometheus_cluster_status.json.data.result[0].value[1] | default('no data yet') }} (0 = green, 1 = yellow, 2 = red)"

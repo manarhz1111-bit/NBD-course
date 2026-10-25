@@ -1,0 +1,44 @@
+{
+  "policy": {
+    "description": "NBD lab 2: nginx logs. Roll over at {{ logs_rollover_max_size }} OR {{ logs_rollover_max_age }} (whichever comes first), move to warm, delete {{ logs_delete_after }} after creation.",
+    "default_state": "hot",
+    "states": [
+      {
+        "name": "hot",
+        "actions": [
+          {
+            "retry": { "count": 3, "backoff": "constant", "delay": "30s" },
+            "rollover": {
+              "min_size": "{{ logs_rollover_max_size }}",
+              "min_index_age": "{{ logs_rollover_max_age }}"
+            }
+          }
+        ],
+        "transitions": [
+          { "state_name": "warm" }
+        ]
+      },
+      {
+        "name": "warm",
+        "actions": [
+          { "replica_count": { "number_of_replicas": 0 } },
+          { "allocation": { "require": { "temp": "warm" }, "wait_for": true } },
+          { "read_only": {} }
+        ],
+        "transitions": [
+          { "state_name": "delete", "conditions": { "min_index_age": "{{ logs_delete_after }}" } }
+        ]
+      },
+      {
+        "name": "delete",
+        "actions": [
+          { "delete": {} }
+        ],
+        "transitions": []
+      }
+    ],
+    "ism_template": [
+      { "index_patterns": ["{{ logs_data_stream }}"], "priority": 100 }
+    ]
+  }
+}

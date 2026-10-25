@@ -1,0 +1,63 @@
+---
+- name: Read roles back
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_security/api/roles/{{ item.name }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  loop: "{{ security_roles }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: security_roles_read
+
+- name: Verify role permissions match the definition
+  ansible.builtin.assert:
+    that:
+      - (item.json[item.item.name].cluster_permissions | sort) == (item.item.cluster_permissions | sort)
+      - (item.json[item.item.name].index_permissions | map(attribute='index_patterns') | list)
+        == (item.item.index_permissions | map(attribute='index_patterns') | list)
+      - (item.json[item.item.name].index_permissions | map(attribute='allowed_actions') | map('sort') | list)
+        == (item.item.index_permissions | map(attribute='allowed_actions') | map('sort') | list)
+    success_msg: >-
+      ROLE VERIFIED: {{ item.item.name }} | cluster: {{ item.item.cluster_permissions | join(', ') }}
+      | index {{ item.item.index_permissions | map(attribute='index_patterns') | flatten | join(', ') }}:
+      {{ item.item.index_permissions | map(attribute='allowed_actions') | flatten | join(', ') }}
+  loop: "{{ security_roles_read.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Ask the cluster which roles each user really gets (authinfo as that user)
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_security/authinfo"
+    user: "{{ item.name }}"
+    password: "{{ item.password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  loop: "{{ security_users }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: security_authinfo
+  no_log: true
+
+- name: Verify every user can log in and has exactly its lab role
+  ansible.builtin.assert:
+    that:
+      - item.json.user_name == item.item.name
+      - item.item.role in item.json.roles
+      - item.json.roles | reject('eq', item.item.role) | reject('eq', 'own_index') | list | length == 0
+    success_msg: "USER VERIFIED: {{ item.item.name }} -> roles {{ item.json.roles }}"
+    fail_msg: "User {{ item.item.name }} has roles {{ item.json.roles | default('?') }}, expected [{{ item.item.role }}]"
+  loop: "{{ security_authinfo.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  no_log: true
+
+- name: Report verified users safely
+  ansible.builtin.debug:
+    msg: "USER VERIFIED: {{ item.user_name }} -> roles {{ item.roles }}"
+  loop: "{{ security_authinfo.results | map(attribute='json') | list }}"
+  loop_control:
+    label: "{{ item.user_name }}"
