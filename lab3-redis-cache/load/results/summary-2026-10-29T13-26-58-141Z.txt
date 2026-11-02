@@ -1,0 +1,5 @@
+
+Target rate: 20 req/s for 1m per scenario (after a 5s ramp-up)
+scenario            avg      p50      p95      p99      max   (ms)   failed   dropped
+with_cache         36.4      8.1    169.0    483.5    877.0     0.00%         0
+without_cache     835.0      9.3   7129.4   9325.0  17616.1     7.60%       157
