@@ -1,0 +1,30 @@
+---
+- name: Prepare MongoDB backup environment
+  ansible.builtin.import_tasks: setup.yml
+  tags:
+    - part3
+    - part3_setup
+
+- name: Create MongoDB backups
+  ansible.builtin.import_tasks: create.yml
+  tags:
+    - part3
+    - part3_backup
+
+- name: Restore all configured MongoDB databases
+  ansible.builtin.import_tasks: restore.yml
+  tags:
+    - never
+    - part3_restore_all
+
+- name: Restore selected MongoDB archive or collection
+  ansible.builtin.import_tasks: restore_archive.yml
+  tags:
+    - never
+    - part3_restore_archive
+
+- name: List retained MongoDB backups
+  ansible.builtin.import_tasks: list_backups.yml
+  tags:
+    - part3
+    - part3_list

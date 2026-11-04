@@ -1,0 +1,95 @@
+---
+- name: Generate backup timestamp with Ansible now()
+  ansible.builtin.set_fact:
+    backup_timestamp: "{{ now(utc=true, fmt='%Y%m%d_%H%M%S_%f') }}"
+
+- name: Define backup directory
+  ansible.builtin.set_fact:
+    backup_directory: "{{ mongodb_backup_root }}/backup-{{ backup_timestamp }}"
+
+- name: Create timestamped backup directory
+  ansible.builtin.file:
+    path: "{{ backup_directory }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Back up configured MongoDB databases
+  block:
+    - name: Create secure temporary MongoDB tools credential file
+      ansible.builtin.copy:
+        dest: /run/lab1-mongodb-tools.yml
+        content: |
+          password: {{ vault_mongodb_admin_password | to_json }}
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Create backup archive for each configured database
+      ansible.builtin.command:
+        argv:
+          - mongodump
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--db={{ item }}"
+          - "--archive={{ backup_directory }}/{{ item }}.archive.gz"
+          - --gzip
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Validate every backup archive with a dry run
+      ansible.builtin.command:
+        argv:
+          - mongorestore
+          - --host=127.0.0.1
+          - "--port={{ mongodb_port }}"
+          - "--username={{ mongodb_admin_user }}"
+          - --authenticationDatabase=admin
+          - --config=/run/lab1-mongodb-tools.yml
+          - "--archive={{ backup_directory }}/{{ item }}.archive.gz"
+          - --gzip
+          - "--nsInclude={{ item }}.*"
+          - --dryRun
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
+      changed_when: false
+
+    - name: Read generated backup archive information
+      ansible.builtin.stat:
+        path: "{{ backup_directory }}/{{ item }}.archive.gz"
+      loop: "{{ backup_db }}"
+      loop_control:
+        label: "{{ item }}"
+      register: backup_archive_files
+
+    - name: Verify every backup archive exists and is non-empty
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size | int > 0
+        success_msg: "BACKUP VERIFIED: {{ item.item }}"
+        fail_msg: "BACKUP FAILED: {{ item.item }}"
+      loop: "{{ backup_archive_files.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Report backup result
+      ansible.builtin.debug:
+        msg:
+          - "BACKUP COMPLETED"
+          - "Backup directory: {{ backup_directory }}"
+          - "Databases: {{ backup_db | join(', ') }}"
+
+  always:
+    - name: Remove temporary MongoDB tools credential file
+      ansible.builtin.file:
+        path: /run/lab1-mongodb-tools.yml
+        state: absent
+      no_log: true

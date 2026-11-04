@@ -1,0 +1,19 @@
+---
+mongodb_port: 27017
+mongodb_admin_user: "lab1AnsibleAdmin"
+mongodb_training_db: "lab1_university_ansible"
+mongodb_writer_user: "lab1WriterUser"
+
+mongodb_monitor_user: "lab1Monitor"
+
+mongodb_exporter_version: "0.53.0"
+mongodb_exporter_port: 9216
+
+mongodb_load_duration: 120
+
+prometheus_version: "3.15.0"
+prometheus_port: 9090
+
+grafana_version: "13.2.3"
+grafana_build: "36482603486"
+grafana_port: 3000

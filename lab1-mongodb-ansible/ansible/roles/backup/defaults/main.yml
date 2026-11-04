@@ -1,0 +1,14 @@
+---
+mongodb_port: 27017
+mongodb_admin_user: "lab1AnsibleAdmin"
+
+mongodb_training_db: "lab1_university_ansible"
+mongodb_library_db: "lab1_library_ansible"
+
+mongodb_backup_root: "/var/backups/mongodb/lab1_ansible"
+
+# Databases managed by the backup role.
+# Add or remove database names here without changing backup tasks.
+backup_db:
+  - "{{ mongodb_training_db }}"
+  - "{{ mongodb_library_db }}"
