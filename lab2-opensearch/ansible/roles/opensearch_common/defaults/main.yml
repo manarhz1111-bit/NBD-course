@@ -1,0 +1,57 @@
+---
+# Values shared by every role of the lab.
+# Other roles list this role in meta/main.yml (dependencies), so these defaults
+# are defined once instead of being copied into each role.
+
+opensearch_version: "3.8.0"
+opensearch_cluster_name: "lab2-opensearch"
+
+opensearch_user: "opensearch"
+opensearch_group: "opensearch"
+
+opensearch_home: "/opt/opensearch"
+opensearch_conf_root: "/etc/opensearch"
+opensearch_data_root: "/var/lib/opensearch"
+opensearch_log_root: "/var/log/opensearch"
+opensearch_pki_dir: "/etc/opensearch-pki"
+
+# Hot-warm topology: three OpenSearch instances on one VM.
+# Each item becomes its own systemd unit: opensearch@<name>.service
+opensearch_nodes:
+  - name: "os-hot-1"
+    temp: "hot"
+    roles: ["cluster_manager", "data", "ingest"]
+    http_port: 9200
+    transport_port: 9300
+  - name: "os-hot-2"
+    temp: "hot"
+    roles: ["cluster_manager", "data", "ingest"]
+    http_port: 9201
+    transport_port: 9301
+  - name: "os-warm-1"
+    temp: "warm"
+    roles: ["cluster_manager", "data"]
+    http_port: 9202
+    transport_port: 9302
+
+# Address used by Ansible, Dashboards, Fluent Bit and Prometheus.
+opensearch_api_host: "127.0.0.1"
+opensearch_api_port: "{{ opensearch_nodes[0].http_port }}"
+opensearch_api_url: "https://{{ opensearch_api_host }}:{{ opensearch_api_port }}"
+
+opensearch_admin_user: "admin"
+opensearch_ca_cert: "{{ opensearch_pki_dir }}/root-ca.pem"
+
+# Certificate subject parts. nodes_dn and admin_dn are built from them.
+opensearch_cert_dn_suffix: "OU=NBD,O=ITMO,L=SPb,C=RU"
+opensearch_cert_domain: "lab2.local"
+opensearch_admin_cert_cn: "lab2-admin"
+
+# Logs
+logs_data_stream: "logs-nginx"
+logs_ism_policy_id: "lab2-logs-retention"
+
+# Users created in part 2 (passwords come from vault.yml)
+logs_writer_user: "lab2_logs_writer"
+logs_reader_user: "lab2_logs_reader"
+monitor_user: "lab2_monitor"

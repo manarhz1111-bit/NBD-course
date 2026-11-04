@@ -1,0 +1,29 @@
+---
+# nginx test site
+nginx_site_port: 8080
+nginx_site_root: "/var/www/lab2"
+nginx_access_log: "/var/log/nginx/lab2_access.json"
+
+# Fluent Bit (official APT repository)
+fluentbit_repo_url: "https://packages.fluentbit.io/ubuntu/{{ ansible_distribution_release }}"
+fluentbit_key_url: "https://packages.fluentbit.io/fluentbit.key"
+fluentbit_conf_dir: "/etc/fluent-bit"
+fluentbit_state_dir: "/var/lib/fluent-bit"
+fluentbit_http_port: 2020
+
+# Index template / ISM
+logs_index_template_name: "{{ logs_data_stream }}-template"
+logs_primary_shards: 1
+logs_replicas: 1
+logs_rollover_max_size: "1mb"
+logs_rollover_max_age: "1m"
+logs_delete_after: "10m"
+# How often ISM evaluates managed indices (minutes). The default is 5,
+# which would make a 1-minute rollover impossible to observe.
+ism_job_interval_minutes: 1
+ism_jitter: 0.0
+
+# Traffic generator (tag part3_load)
+load_requests: 30000
+load_concurrency: 20
+load_not_found_requests: 3000

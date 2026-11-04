@@ -1,0 +1,7 @@
+---
+# This role only provides shared defaults (see defaults/main.yml).
+- name: Shared OpenSearch defaults loaded
+  ansible.builtin.debug:
+    msg: "Cluster {{ opensearch_cluster_name }}, {{ opensearch_nodes | length }} nodes, API {{ opensearch_api_url }}"
+  tags:
+    - always

@@ -1,0 +1,42 @@
+---
+# Runs after part 3, when the logs-nginx data stream exists.
+# Every request is sent as the user under test; the HTTP status is the answer.
+
+- name: Send test requests as each lab user
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}{{ item.path }}"
+    method: "{{ item.method }}"
+    user: "{{ item.user }}"
+    password: "{{ (security_users | selectattr('name', 'eq', item.user) | first).password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: "{{ 'json' if item.body else 'raw' }}"
+    body: >-
+      {{
+        {'@timestamp': now(utc=true, fmt='%Y-%m-%dT%H:%M:%S.%fZ'),
+         'message': 'access check from Ansible',
+         'source': 'ansible-access-check',
+         'checked_user': item.user}
+        if item.body else omit
+      }}
+    status_code: [200, 201, 401, 403, 404]
+    return_content: true
+  loop: "{{ security_access_checks }}"
+  loop_control:
+    label: "{{ item.user }} {{ item.method }} {{ item.path }}"
+  register: security_access_results
+  no_log: true
+
+- name: Verify allowed and denied operations
+  ansible.builtin.assert:
+    that:
+      - item.status == item.item.expect
+    success_msg: >-
+      {{ 'ALLOWED' if item.status < 300 else 'DENIED ' }} {{ item.status }}
+      | {{ item.item.user }} | {{ item.item.what }}
+    fail_msg: >-
+      {{ item.item.user }} {{ item.item.method }} {{ item.item.path }}: got {{ item.status }},
+      expected {{ item.item.expect }}. Body: {{ item.content | default('') | truncate(300) }}
+  loop: "{{ security_access_results.results }}"
+  loop_control:
+    label: "{{ item.item.user }} -> {{ item.item.what }}"

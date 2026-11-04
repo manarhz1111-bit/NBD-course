@@ -1,0 +1,54 @@
+# Managed by Ansible (lab2). Node: {{ opensearch_node.name }} ({{ opensearch_node.temp }})
+
+cluster.name: {{ opensearch_cluster_name }}
+node.name: {{ opensearch_node.name }}
+node.roles: {{ opensearch_node.roles | to_json }}
+
+# Hot-warm: shard allocation filters and ISM use this attribute.
+node.attr.temp: {{ opensearch_node.temp }}
+
+path.data: {{ opensearch_data_root }}/{{ opensearch_node.name }}
+path.logs: {{ opensearch_log_root }}/{{ opensearch_node.name }}
+
+network.host: {{ opensearch_api_host }}
+http.port: {{ opensearch_node.http_port }}
+transport.port: {{ opensearch_node.transport_port }}
+
+discovery.seed_hosts: {{ opensearch_nodes | map(attribute='transport_port') | map('regex_replace', '^', opensearch_api_host ~ ':') | list | to_json }}
+cluster.initial_cluster_manager_nodes: {{ opensearch_nodes | selectattr('roles', 'contains', 'cluster_manager') | map(attribute='name') | list | to_json }}
+
+bootstrap.memory_lock: false
+
+######## Security plugin: TLS on the transport layer (node <-> node) ########
+plugins.security.ssl.transport.pemcert_filepath: certs/node.pem
+plugins.security.ssl.transport.pemkey_filepath: certs/node-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: certs/root-ca.pem
+# The peer certificate must contain the address we connect to (IP SAN 127.0.0.1).
+plugins.security.ssl.transport.enforce_hostname_verification: true
+plugins.security.ssl.transport.resolve_hostname: false
+
+######## Security plugin: TLS on the REST layer (clients -> node) ########
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.http.pemcert_filepath: certs/node.pem
+plugins.security.ssl.http.pemkey_filepath: certs/node-key.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: certs/root-ca.pem
+plugins.security.ssl.http.enabled_protocols:
+  - "TLSv1.3"
+  - "TLSv1.2"
+
+######## Who is a node and who is a super admin ########
+plugins.security.nodes_dn:
+  - "CN=*.nodes.{{ opensearch_cert_domain }},{{ opensearch_cert_dn_suffix }}"
+plugins.security.authcz.admin_dn:
+  - "CN={{ opensearch_admin_cert_cn }},{{ opensearch_cert_dn_suffix }}"
+
+# Load opensearch-security/*.yml into the security index on the very first start,
+# so no manual securityadmin.sh run is needed.
+plugins.security.allow_default_init_securityindex: true
+
+# The admin user (role all_access) may manage roles and users through the REST API (part 2).
+plugins.security.restapi.roles_enabled: ["all_access", "security_rest_api_access"]
+plugins.security.restapi.password_min_length: 12
+
+plugins.security.system_indices.enabled: true
+plugins.security.audit.type: noop

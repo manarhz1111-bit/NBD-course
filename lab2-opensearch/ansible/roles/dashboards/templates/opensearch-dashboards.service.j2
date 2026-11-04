@@ -1,0 +1,17 @@
+[Unit]
+Description=OpenSearch Dashboards {{ dashboards_version }} (NBD Lab 2)
+Documentation=https://docs.opensearch.org/
+Wants=network-online.target
+After=network-online.target opensearch@{{ opensearch_nodes[0].name }}.service
+
+[Service]
+Type=simple
+User={{ dashboards_user }}
+Group={{ dashboards_group }}
+Environment=OSD_PATH_CONF={{ dashboards_conf_dir }}
+ExecStart={{ dashboards_home }}/bin/opensearch-dashboards
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

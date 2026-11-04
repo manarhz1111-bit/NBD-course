@@ -1,0 +1,18 @@
+---
+- name: Configure and verify the Prometheus exporter plugin
+  ansible.builtin.import_tasks: plugin.yml
+  tags:
+    - part4
+    - part4_plugin
+
+- name: Install and configure Prometheus
+  ansible.builtin.import_tasks: prometheus.yml
+  tags:
+    - part4
+    - part4_prometheus
+
+- name: Install Grafana and provision the OpenSearch dashboard
+  ansible.builtin.import_tasks: grafana.yml
+  tags:
+    - part4
+    - part4_grafana

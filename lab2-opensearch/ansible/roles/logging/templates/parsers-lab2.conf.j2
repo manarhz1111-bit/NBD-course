@@ -1,0 +1,6 @@
+# Managed by Ansible (lab2)
+# nginx already writes JSON, so the parser only decodes it.
+# @timestamp is the moment Fluent Bit read the line; the nginx time stays in "time".
+[PARSER]
+    Name        lab2_nginx_json
+    Format      json

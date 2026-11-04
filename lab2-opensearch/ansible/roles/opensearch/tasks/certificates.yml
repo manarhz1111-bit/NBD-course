@@ -1,0 +1,141 @@
+---
+# A small private PKI for the lab:
+#   root-ca          - signs everything below
+#   <node name>      - one certificate per OpenSearch node (transport + REST TLS)
+#   lab2-admin       - admin client certificate (securityadmin.sh, transport TLS check)
+#   dashboards       - HTTPS certificate for OpenSearch Dashboards
+# OpenSearch only accepts PKCS#8 private keys, hence format: pkcs8.
+
+- name: Start the certificate list with the admin and Dashboards certificates
+  ansible.builtin.set_fact:
+    opensearch_certificates:
+      - { file: "admin", cn: "{{ opensearch_admin_cert_cn }}", server: false }
+      - { file: "dashboards", cn: "dashboards.{{ opensearch_cert_domain }}", server: true }
+
+- name: Add one certificate per OpenSearch node
+  ansible.builtin.set_fact:
+    opensearch_certificates: >-
+      {{ opensearch_certificates
+         + [{'file': item.name, 'cn': item.name ~ '.nodes.' ~ opensearch_cert_domain, 'server': true}] }}
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Create root CA private key
+  community.crypto.openssl_privatekey:
+    path: "{{ opensearch_pki_dir }}/root-ca-key.pem"
+    type: RSA
+    size: 4096
+    format: pkcs8
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Create root CA signing request
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ opensearch_pki_dir }}/root-ca-key.pem"
+    subject_ordered:
+      # Encoded C -> CN, so Java prints the DN as "CN=...,OU=...,O=...,L=...,C=..."
+      - C: "RU"
+      - L: "SPb"
+      - O: "ITMO"
+      - OU: "NBD"
+      - CN: "lab2-root-ca"
+    basic_constraints:
+      - "CA:TRUE"
+    basic_constraints_critical: true
+    key_usage:
+      - keyCertSign
+      - cRLSign
+    key_usage_critical: true
+    use_common_name_for_san: false
+  register: opensearch_ca_csr
+  changed_when: false
+
+- name: Self-sign root CA certificate
+  community.crypto.x509_certificate:
+    path: "{{ opensearch_ca_cert }}"
+    csr_content: "{{ opensearch_ca_csr.csr }}"
+    privatekey_path: "{{ opensearch_pki_dir }}/root-ca-key.pem"
+    provider: selfsigned
+    selfsigned_not_after: "+{{ opensearch_cert_days * 2 }}d"
+    owner: root
+    group: "{{ opensearch_group }}"
+    mode: "0644"
+
+- name: Create private keys for nodes, admin and Dashboards
+  community.crypto.openssl_privatekey:
+    path: "{{ opensearch_pki_dir }}/{{ item.file }}-key.pem"
+    type: RSA
+    size: 2048
+    format: pkcs8
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ opensearch_certificates }}"
+  loop_control:
+    label: "{{ item.file }}"
+
+- name: Create certificate signing requests
+  community.crypto.openssl_csr_pipe:
+    privatekey_path: "{{ opensearch_pki_dir }}/{{ item.file }}-key.pem"
+    subject_ordered:
+      - C: "RU"
+      - L: "SPb"
+      - O: "ITMO"
+      - OU: "NBD"
+      - CN: "{{ item.cn }}"
+    subject_alt_name: >-
+      {{
+        ['DNS:' ~ item.cn, 'DNS:localhost', 'IP:127.0.0.1']
+        if item.server else omit
+      }}
+    use_common_name_for_san: false
+    basic_constraints:
+      - "CA:FALSE"
+    key_usage:
+      - digitalSignature
+      - keyEncipherment
+    extended_key_usage:
+      - serverAuth
+      - clientAuth
+  loop: "{{ opensearch_certificates }}"
+  loop_control:
+    label: "{{ item.file }}"
+  register: opensearch_leaf_csrs
+  changed_when: false
+
+- name: Sign certificates with the lab CA
+  community.crypto.x509_certificate:
+    path: "{{ opensearch_pki_dir }}/{{ item.item.file }}.pem"
+    csr_content: "{{ item.csr }}"
+    provider: ownca
+    ownca_path: "{{ opensearch_ca_cert }}"
+    ownca_privatekey_path: "{{ opensearch_pki_dir }}/root-ca-key.pem"
+    ownca_not_after: "+{{ opensearch_cert_days }}d"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: "{{ opensearch_leaf_csrs.results }}"
+  loop_control:
+    label: "{{ item.item.file }} ({{ item.item.cn }})"
+
+- name: Read issued node certificates back
+  community.crypto.x509_certificate_info:
+    path: "{{ opensearch_pki_dir }}/{{ item.name }}.pem"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: opensearch_cert_info
+
+- name: Verify node certificates (issuer, SAN, key usage)
+  ansible.builtin.assert:
+    that:
+      - item.issuer.commonName == 'lab2-root-ca'
+      - ('IP:127.0.0.1' in item.subject_alt_name)
+      - ('TLS Web Server Authentication' in item.extended_key_usage or 'serverAuth' in item.extended_key_usage)
+      - ('TLS Web Client Authentication' in item.extended_key_usage or 'clientAuth' in item.extended_key_usage)
+    success_msg: "CERT VERIFIED: {{ item.subject.commonName }}, valid until {{ item.not_after }}"
+  loop: "{{ opensearch_cert_info.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"

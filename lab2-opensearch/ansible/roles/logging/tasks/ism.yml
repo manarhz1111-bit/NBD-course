@@ -1,0 +1,77 @@
+---
+- name: Make ISM check managed indices every minute
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_cluster/settings"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body:
+      persistent:
+        plugins.index_state_management.job_interval: "{{ ism_job_interval_minutes | int }}"
+        plugins.index_state_management.jitter: "{{ ism_jitter | float }}"
+  changed_when: false
+
+- name: Read existing ISM policy
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_ism/policies/{{ logs_ism_policy_id }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    status_code: [200, 404]
+    return_content: true
+  register: ism_existing
+
+- name: Compare the stored policy with the template
+  ansible.builtin.set_fact:
+    ism_wanted: "{{ lookup('ansible.builtin.template', 'ism-policy.json.j2') | from_json }}"
+
+- name: Create or update the ISM policy (optimistic locking with seq_no/primary_term)
+  ansible.builtin.uri:
+    url: >-
+      {{ opensearch_api_url }}/_plugins/_ism/policies/{{ logs_ism_policy_id }}{{
+        '' if ism_existing.status == 404 else
+        '?if_seq_no=' ~ ism_existing.json._seq_no ~ '&if_primary_term=' ~ ism_existing.json._primary_term }}
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body: "{{ ism_wanted }}"
+    status_code: [200, 201]
+  # The stored policy is normalised by OpenSearch (default retry/timeout fields are
+  # added), so only the values that matter are compared.
+  when: >-
+    ism_existing.status == 404
+    or ism_existing.json.policy.states | map(attribute='name') | list != ['hot', 'warm', 'delete']
+    or ism_existing.json.policy.states[0].actions[0].rollover.min_size | default('') != logs_rollover_max_size
+    or ism_existing.json.policy.states[0].actions[0].rollover.min_index_age | default('') != logs_rollover_max_age
+    or ism_existing.json.policy.states[1].transitions[0].conditions.min_index_age | default('') != logs_delete_after
+    or ism_existing.json.policy.ism_template[0].index_patterns | default([]) != [logs_data_stream]
+  changed_when: true
+
+- name: Read the policy back
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_ism/policies/{{ logs_ism_policy_id }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: ism_stored
+
+- name: Verify policy states and conditions
+  ansible.builtin.assert:
+    that:
+      - ism_stored.json.policy.states | map(attribute='name') | list == ['hot', 'warm', 'delete']
+      - ism_stored.json.policy.states[0].actions[0].rollover.min_size == logs_rollover_max_size
+      - ism_stored.json.policy.states[0].actions[0].rollover.min_index_age == logs_rollover_max_age
+      - ism_stored.json.policy.states[1].transitions[0].conditions.min_index_age == logs_delete_after
+      - logs_data_stream in ism_stored.json.policy.ism_template[0].index_patterns
+    success_msg: >-
+      ISM VERIFIED: {{ logs_ism_policy_id }} hot(rollover {{ logs_rollover_max_size }} OR {{ logs_rollover_max_age }})
+      -> warm(0 replicas, temp=warm, read_only) -> delete at {{ logs_delete_after }}

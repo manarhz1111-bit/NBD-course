@@ -1,0 +1,105 @@
+---
+# Change -> read back -> assert. Everything below only reads state.
+
+- name: Read cluster health
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_cluster/health"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: opensearch_health
+
+- name: Read node list with roles and attributes
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_nodes/_all/settings?filter_path=nodes.*.name,nodes.*.roles,nodes.*.attributes.temp,nodes.*.version"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: opensearch_nodes_info
+
+- name: Build node name -> temp map from the cluster
+  ansible.builtin.set_fact:
+    opensearch_live_temps: >-
+      {{ dict(opensearch_nodes_info.json.nodes.values() | map(attribute='name')
+              | zip(opensearch_nodes_info.json.nodes.values() | map(attribute='attributes') | map(attribute='temp'))) }}
+    opensearch_live_versions: "{{ opensearch_nodes_info.json.nodes.values() | map(attribute='version') | unique | list }}"
+
+- name: Verify cluster, version and hot-warm attributes
+  ansible.builtin.assert:
+    that:
+      - opensearch_health.json.status == 'green'
+      - opensearch_health.json.number_of_nodes == opensearch_nodes | length
+      - opensearch_live_versions == [opensearch_version]
+      - opensearch_live_temps[item.name] == item.temp
+    success_msg: "NODE VERIFIED: {{ item.name }} temp={{ item.temp }} ({{ opensearch_version }})"
+    fail_msg: "Node {{ item.name }} is missing or has wrong attributes: {{ opensearch_live_temps }}"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Plain HTTP must be refused on the REST port
+  ansible.builtin.uri:
+    url: "http://{{ opensearch_api_host }}:{{ opensearch_api_port }}/"
+    timeout: 5
+  register: opensearch_plain_http
+  failed_when: opensearch_plain_http.status == 200
+
+- name: Check REST TLS handshake and certificate chain on every node
+  ansible.builtin.shell:
+    cmd: >-
+      openssl s_client -connect {{ opensearch_api_host }}:{{ item.http_port }}
+      -CAfile {{ opensearch_ca_cert }} -verify_return_error -brief < /dev/null 2>&1
+    executable: /bin/bash
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "REST {{ item.name }}:{{ item.http_port }}"
+  register: opensearch_rest_tls
+  changed_when: false
+  failed_when: false
+
+- name: Check transport TLS (mutual TLS, admin client certificate) on every node
+  ansible.builtin.shell:
+    cmd: >-
+      openssl s_client -connect {{ opensearch_api_host }}:{{ item.transport_port }}
+      -CAfile {{ opensearch_ca_cert }}
+      -cert {{ opensearch_pki_dir }}/admin.pem -key {{ opensearch_pki_dir }}/admin-key.pem
+      -verify_return_error -brief < /dev/null 2>&1
+    executable: /bin/bash
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "transport {{ item.name }}:{{ item.transport_port }}"
+  register: opensearch_transport_tls
+  changed_when: false
+  failed_when: false
+
+- name: Verify TLS results
+  ansible.builtin.assert:
+    that:
+      - "'Verification: OK' in item.stdout"
+      - "'Protocol version: TLSv1.3' in item.stdout or 'Protocol version: TLSv1.2' in item.stdout"
+    success_msg: "TLS VERIFIED: {{ item.item.name }} -> {{ item.stdout_lines | select('search', 'Protocol version|Peer certificate') | join('; ') }}"
+  loop: "{{ opensearch_rest_tls.results + opensearch_transport_tls.results }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+
+- name: Read autostart state of every node
+  ansible.builtin.command:
+    argv: [systemctl, is-enabled, "opensearch@{{ item.name }}"]
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: opensearch_enabled
+  changed_when: false
+
+- name: Report part 1 result
+  ansible.builtin.debug:
+    msg:
+      - "Cluster: {{ opensearch_health.json.cluster_name }}, status {{ opensearch_health.json.status | upper }}"
+      - "Nodes: {{ opensearch_live_temps | dict2items | map('join', '=') | join(', ') }}"
+      - "Active shards: {{ opensearch_health.json.active_shards }}, unassigned: {{ opensearch_health.json.unassigned_shards }}"
+      - "Plain HTTP on {{ opensearch_api_port }}: refused (status {{ opensearch_plain_http.status }})"
+      - "Autostart: {{ opensearch_enabled.results | map(attribute='stdout') | join(', ') }}"

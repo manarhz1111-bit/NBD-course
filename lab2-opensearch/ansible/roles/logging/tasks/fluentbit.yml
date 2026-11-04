@@ -1,0 +1,111 @@
+---
+- name: Add the official Fluent Bit APT repository
+  ansible.builtin.deb822_repository:
+    name: fluent-bit
+    types: [deb]
+    uris: ["{{ fluentbit_repo_url }}"]
+    suites: ["{{ ansible_distribution_release }}"]
+    components: [main]
+    signed_by: "{{ fluentbit_key_url }}"
+    state: present
+    enabled: true
+  register: fluentbit_repo
+
+- name: Install Fluent Bit
+  ansible.builtin.apt:
+    name: fluent-bit
+    state: present
+    update_cache: "{{ fluentbit_repo is changed }}"
+
+- name: Create Fluent Bit certs and state directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0750"
+  loop:
+    - "{{ fluentbit_conf_dir }}/certs"
+    - "{{ fluentbit_state_dir }}"
+    - "{{ fluentbit_state_dir }}/storage"
+
+- name: Install the lab CA for TLS verification
+  ansible.builtin.copy:
+    src: "{{ opensearch_ca_cert }}"
+    dest: "{{ fluentbit_conf_dir }}/certs/root-ca.pem"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Fluent Bit
+
+- name: Store the writer password outside the main config (EnvironmentFile of the unit)
+  ansible.builtin.copy:
+    dest: /etc/default/fluent-bit
+    content: |
+      # Managed by Ansible (lab2)
+      LAB2_WRITER_PASSWORD={{ vault_logs_writer_password }}
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify: Restart Fluent Bit
+
+- name: Deploy Fluent Bit parsers
+  ansible.builtin.template:
+    src: parsers-lab2.conf.j2
+    dest: "{{ fluentbit_conf_dir }}/parsers-lab2.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Fluent Bit
+
+- name: Deploy Fluent Bit pipeline
+  ansible.builtin.template:
+    src: fluent-bit.conf.j2
+    dest: "{{ fluentbit_conf_dir }}/fluent-bit.conf"
+    owner: root
+    group: root
+    mode: "0640"
+  notify: Restart Fluent Bit
+
+- name: Validate Fluent Bit configuration (dry run)
+  ansible.builtin.command:
+    argv:
+      - /opt/fluent-bit/bin/fluent-bit
+      - --dry-run
+      - -c
+      - "{{ fluentbit_conf_dir }}/fluent-bit.conf"
+  environment:
+    LAB2_WRITER_PASSWORD: "dry-run"
+  changed_when: false
+
+- name: Enable and start Fluent Bit
+  ansible.builtin.systemd_service:
+    name: fluent-bit
+    enabled: true
+    state: started
+
+- name: Apply Fluent Bit handlers now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for Fluent Bit health endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ fluentbit_http_port }}/api/v1/health"
+    return_content: true
+  register: fluentbit_health
+  until: fluentbit_health.status == 200
+  retries: 10
+  delay: 3
+
+- name: Read Fluent Bit version
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ fluentbit_http_port }}/"
+    return_content: true
+  register: fluentbit_info
+
+- name: Report Fluent Bit status
+  ansible.builtin.debug:
+    msg:
+      - "Fluent Bit {{ fluentbit_info.json['fluent-bit'].version | default('?') }} is running, health: {{ fluentbit_health.content | trim }}"
+      - "Input: tail {{ nginx_access_log }} -> output: {{ opensearch_api_url }}/{{ logs_data_stream }} as {{ logs_writer_user }} (TLS, CA verified)"

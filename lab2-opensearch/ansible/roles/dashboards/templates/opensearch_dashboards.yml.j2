@@ -1,0 +1,24 @@
+# Managed by Ansible (lab2)
+
+server.name: "lab2-dashboards"
+server.host: "{{ dashboards_bind_host }}"
+server.port: {{ dashboards_port }}
+
+# HTTPS for the browser -> Dashboards connection
+server.ssl.enabled: true
+server.ssl.certificate: {{ dashboards_conf_dir }}/certs/dashboards.pem
+server.ssl.key: {{ dashboards_conf_dir }}/certs/dashboards-key.pem
+
+# HTTPS with full certificate verification for Dashboards -> OpenSearch
+opensearch.hosts: {{ dashboards_opensearch_hosts | to_json }}
+opensearch.ssl.verificationMode: full
+opensearch.ssl.certificateAuthorities: ["{{ dashboards_conf_dir }}/certs/root-ca.pem"]
+opensearch.username: "kibanaserver"
+opensearch.password: "{{ vault_kibanaserver_password }}"
+opensearch.requestHeadersAllowlist: ["securitytenant", "Authorization"]
+
+opensearch_security.multitenancy.enabled: false
+opensearch_security.readonly_mode.roles: []
+opensearch_security.cookie.secure: true
+
+path.data: {{ dashboards_data_dir }}

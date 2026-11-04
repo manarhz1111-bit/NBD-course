@@ -1,0 +1,64 @@
+---
+# Read-only snapshot of the data stream: which backing indices exist,
+# how big they are, in which ISM state they are and on which node their shards live.
+
+- name: Read backing indices of the data stream
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_cat/indices/.ds-{{ logs_data_stream }}-*?format=json&h=index,health,pri,rep,docs.count,pri.store.size,creation.date.string&s=index&bytes=kb"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: logs_cat_indices
+
+- name: Read shard placement
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_cat/shards/.ds-{{ logs_data_stream }}-*?format=json&h=index,shard,prirep,state,node&s=index,prirep"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: logs_cat_shards
+
+- name: Read ISM state of every backing index
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_plugins/_ism/explain/.ds-{{ logs_data_stream }}-*"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: logs_ism_explain
+
+- name: Read the data stream
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_data_stream/{{ logs_data_stream }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: logs_ds_status
+
+- name: Show the data stream summary
+  ansible.builtin.debug:
+    msg: >-
+      {{ now(utc=false, fmt='%H:%M:%S') }} | {{ logs_data_stream }}
+      generation {{ logs_ds_status.json.data_streams[0].generation }},
+      {{ logs_cat_indices.json | length }} backing indices,
+      write index {{ (logs_ds_status.json.data_streams[0].indices | last).index_name }},
+      health {{ logs_ds_status.json.data_streams[0].status }}
+
+- name: Show one line per backing index (size, ISM state, node)
+  ansible.builtin.debug:
+    msg: >-
+      {{ item.index }} | created {{ item['creation.date.string'][11:19] }}
+      | docs {{ item['docs.count'] }} | {{ item['pri.store.size'] }} KB
+      | {{ item.pri }}p/{{ item.rep }}r {{ item.health }}
+      | ISM {{ (logs_ism_explain.json[item.index] | default({})).state.name | default('-') }}/{{ (logs_ism_explain.json[item.index] | default({})).action.name | default('-') }}
+      | on {{ logs_cat_shards.json | selectattr('index', 'eq', item.index) | map(attribute='node') | map('default', 'UNASSIGNED', true) | join(' + ') }}
+  loop: "{{ logs_cat_indices.json }}"
+  loop_control:
+    label: "{{ item.index }}"

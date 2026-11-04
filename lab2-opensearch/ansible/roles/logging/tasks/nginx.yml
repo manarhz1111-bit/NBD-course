@@ -1,0 +1,87 @@
+---
+- name: Install nginx and ApacheBench (load generator)
+  ansible.builtin.apt:
+    name:
+      - nginx
+      - apache2-utils
+    state: present
+    update_cache: true
+
+- name: Define JSON log format (http context)
+  ansible.builtin.template:
+    src: nginx-json-log.conf.j2
+    dest: /etc/nginx/conf.d/lab2-json-log.conf
+    owner: root
+    group: root
+    mode: "0644"
+  register: nginx_logformat
+
+- name: Create site root
+  ansible.builtin.file:
+    path: "{{ nginx_site_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy test page
+  ansible.builtin.template:
+    src: index.html.j2
+    dest: "{{ nginx_site_root }}/index.html"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Deploy nginx site
+  ansible.builtin.template:
+    src: nginx-site.conf.j2
+    dest: /etc/nginx/sites-available/lab2
+    owner: root
+    group: root
+    mode: "0644"
+  register: nginx_site
+
+- name: Enable nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/lab2
+    dest: /etc/nginx/sites-enabled/lab2
+    state: link
+  register: nginx_site_link
+
+- name: Validate nginx configuration
+  ansible.builtin.command:
+    argv: [nginx, -t]
+  changed_when: false
+
+- name: Enable and start nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Reload nginx after configuration change
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  when: nginx_logformat is changed or nginx_site is changed or nginx_site_link is changed
+
+- name: Request the page once
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ nginx_site_port }}/?from=ansible"
+    return_content: true
+  register: nginx_page
+
+- name: Read the last access log line
+  ansible.builtin.command:
+    argv: [tail, -n, "1", "{{ nginx_access_log }}"]
+  register: nginx_last_line
+  changed_when: false
+
+- name: Verify the access log line is valid JSON with the expected fields
+  ansible.builtin.assert:
+    that:
+      - nginx_page.status == 200
+      - (nginx_last_line.stdout | from_json).status == 200
+      - (nginx_last_line.stdout | from_json).request_uri == '/?from=ansible'
+      - "'time' in (nginx_last_line.stdout | from_json)"
+    success_msg: "NGINX JSON LOG VERIFIED: {{ nginx_last_line.stdout }}"

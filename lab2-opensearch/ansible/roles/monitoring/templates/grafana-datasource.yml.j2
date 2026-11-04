@@ -1,0 +1,12 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus Lab 2
+    uid: prometheus-lab2
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:{{ prometheus_port }}
+    isDefault: {{ (not grafana_lab1_datasource_file.stat.exists) | lower }}
+    editable: false
+    jsonData:
+      timeInterval: {{ prometheus_scrape_interval }}
