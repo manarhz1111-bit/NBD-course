@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: "NBD Lab 3"
+    folder: "NBD Lab 3"
+    type: file
+    disableDeletion: true
+    editable: false
+    updateIntervalSeconds: 10
+    options:
+      path: /var/lib/grafana/dashboards

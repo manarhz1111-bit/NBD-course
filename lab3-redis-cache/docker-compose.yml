@@ -1,0 +1,155 @@
+name: lab3-redis
+
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+services:
+  postgres:
+    image: postgres:18.6
+    environment:
+      POSTGRES_DB: library
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+      APP_DB_PASSWORD: ${APP_DB_PASSWORD:?}
+      EXPORTER_DB_PASSWORD: ${EXPORTER_DB_PASSWORD:?}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - track_io_timing=on
+    volumes:
+      - pg-data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d library"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 120s
+    logging: *logging
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.10.3
+    entrypoint: ["/usr/local/bin/start-redis.sh"]
+    environment:
+      REDIS_ADMIN_PASSWORD: ${REDIS_ADMIN_PASSWORD:?}
+      REDIS_APP_PASSWORD: ${REDIS_APP_PASSWORD:?}
+      REDIS_EXPORTER_PASSWORD: ${REDIS_EXPORTER_PASSWORD:?}
+    volumes:
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./redis/start-redis.sh:/usr/local/bin/start-redis.sh:ro
+      - redis-data:/data
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning --user app --pass \"$$REDIS_APP_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+    restart: unless-stopped
+
+  api:
+    build: ./app
+    image: lab3/bookcache-api:1.0
+    environment:
+      PG_DSN: postgresql://lab3_app:${APP_DB_PASSWORD}@postgres:5432/library
+      PG_POOL_MAX: "10"
+      REDIS_HOST: redis
+      REDIS_USER: app
+      REDIS_PASSWORD: ${REDIS_APP_PASSWORD}
+      BOOK_TTL_S: ${BOOK_TTL_S:-3600}
+      TOP_TTL_S: ${TOP_TTL_S:-60}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    logging: *logging
+    restart: unless-stopped
+
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.96.0
+    environment:
+      REDIS_ADDR: redis://redis:6379
+      REDIS_USER: exporter
+      REDIS_PASSWORD: ${REDIS_EXPORTER_PASSWORD}
+      REDIS_EXPORTER_CHECK_KEY_GROUPS: '^(book):,^(top):,^(genres):,^(lock):'
+    depends_on:
+      redis: { condition: service_healthy }
+    logging: *logging
+    restart: unless-stopped
+
+  postgres-exporter:
+    image: quay.io/prometheuscommunity/postgres-exporter:v0.20.1
+    environment:
+      DATA_SOURCE_URI: postgres:5432/library?sslmode=disable
+      DATA_SOURCE_USER: lab3_exporter
+      DATA_SOURCE_PASS: ${EXPORTER_DB_PASSWORD}
+    depends_on:
+      postgres: { condition: service_healthy }
+    logging: *logging
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-remote-write-receiver
+      - --web.enable-lifecycle
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9091:9090"
+    logging: *logging
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:12.3.8
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    depends_on: [prometheus]
+    logging: *logging
+    restart: unless-stopped
+
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["load"]
+    user: root
+    environment:
+      BASE_URL: http://api:8000
+      K6_PROMETHEUS_RW_SERVER_URL: http://prometheus:9090/api/v1/write
+      K6_PROMETHEUS_RW_TREND_STATS: "p(50),p(95),p(99),avg"
+      K6_PROMETHEUS_RW_PUSH_INTERVAL: 5s
+    volumes:
+      - ./load:/scripts
+    depends_on:
+      api: { condition: service_healthy }
+
+volumes:
+  pg-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
