@@ -1,0 +1,41 @@
+---
+- name: Run one insert strategy per pass
+  ansible.builtin.include_tasks: experiment_pass.yml
+  loop: "{{ generator_experiment_modes }}"
+  loop_control:
+    loop_var: generator_mode
+
+- name: Let ClickHouse merge again
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "{{ item }}"
+    timeout: 120
+  loop:
+    - "SYSTEM START MERGES {{ clickhouse_database }}.insert_lab"
+    - "OPTIMIZE TABLE {{ clickhouse_database }}.insert_lab FINAL"
+  changed_when: false
+
+- name: Count parts after the forced merge
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: >-
+      SELECT count() AS parts, sum(rows) AS rows
+      FROM system.parts WHERE database = '{{ clickhouse_database }}' AND table = 'insert_lab' AND active
+    return_content: true
+  register: generator_after_merge
+
+- name: Show the insert experiment
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['INSERT EXPERIMENT (' ~ generator_experiment_rows ~ ' rows each, merges stopped while inserting)']
+         + generator_experiment_results
+         + ['after OPTIMIZE FINAL on the single-row pass: %s active part(s), %s rows' | format(
+              generator_after_merge.json.data[0].parts, generator_after_merge.json.data[0].rows)] }}

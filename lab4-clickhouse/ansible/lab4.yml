@@ -1,0 +1,28 @@
+---
+- name: NBD Laboratory 4 - ClickHouse analytics with Grafana
+  hosts: lab4
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: clickhouse
+      tags: [part1]
+    - role: schema
+      tags: [part2]
+    - role: generator
+      tags: [part3]
+    - role: grafana
+      tags: [part4]
+
+  tasks:
+    - name: Print storage, keys and index usage for the report
+      ansible.builtin.import_role:
+        name: schema
+        tasks_from: report.yml
+      tags: [never, report]
+
+    - name: Compare single-row, async and batch inserts
+      ansible.builtin.import_role:
+        name: generator
+        tasks_from: experiment.yml
+      tags: [never, experiment]

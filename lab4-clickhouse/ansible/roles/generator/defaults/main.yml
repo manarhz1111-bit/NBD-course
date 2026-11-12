@@ -1,0 +1,11 @@
+---
+generator_user: lab4gen
+generator_home: /opt/lab4-generator
+generator_env_file: /etc/lab4-generator.env
+generator_source: "{{ lab4_root }}/generator"
+generator_rate: 40
+generator_interval: 5
+generator_backfill_hours: 48
+generator_experiment_rows: 300
+generator_experiment_workers: 20
+generator_experiment_modes: [batch, async, single]

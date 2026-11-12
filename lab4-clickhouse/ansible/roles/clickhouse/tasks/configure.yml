@@ -1,0 +1,42 @@
+---
+- name: Remove the password file the package can create interactively
+  ansible.builtin.file:
+    path: /etc/clickhouse-server/users.d/default-password.xml
+    state: absent
+  notify: Restart ClickHouse
+
+- name: Render server settings
+  ansible.builtin.template:
+    src: server.xml.j2
+    dest: /etc/clickhouse-server/config.d/lab4.xml
+    owner: clickhouse
+    group: clickhouse
+    mode: "0640"
+  notify: Restart ClickHouse
+
+- name: Render users, profiles and grants
+  ansible.builtin.template:
+    src: users.xml.j2
+    dest: /etc/clickhouse-server/users.d/lab4.xml
+    owner: clickhouse
+    group: clickhouse
+    mode: "0640"
+  notify: Restart ClickHouse
+
+- name: Enable and start ClickHouse
+  ansible.builtin.systemd_service:
+    name: clickhouse-server
+    enabled: true
+    state: started
+
+- name: Apply configuration changes now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for the HTTP interface
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/ping"
+    return_content: true
+  register: clickhouse_ping
+  until: clickhouse_ping.status == 200
+  retries: 30
+  delay: 2

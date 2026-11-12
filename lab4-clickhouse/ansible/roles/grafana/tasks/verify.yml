@@ -1,0 +1,50 @@
+---
+- name: Wait for the Grafana health endpoint
+  ansible.builtin.uri:
+    url: "{{ grafana_url }}/api/health"
+    return_content: true
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 60
+  delay: 10
+
+- name: Check the dashboard files
+  ansible.builtin.assert:
+    that:
+      - dashboard.uid == 'nbd-lab4-' ~ item
+      - dashboard.panels | length > 10
+    success_msg: "{{ dashboard.title }}: {{ dashboard.panels | rejectattr('type', 'eq', 'row') | list | length }} panels"
+  loop: "{{ grafana_dashboards }}"
+  vars:
+    dashboard: "{{ lookup('ansible.builtin.file', grafana_dashboards_source ~ '/' ~ item ~ '.json') | from_json }}"
+
+- name: Check the data source and dashboards through the Grafana API
+  when: grafana_admin_password | length > 0
+  block:
+    - name: Run the data source health check
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/datasources/uid/{{ grafana_datasource_uid }}/health"
+        user: "{{ grafana_admin_user }}"
+        password: "{{ grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: grafana_ds_health
+
+    - name: Search the provisioned dashboards
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/search?tag=lab4"
+        user: "{{ grafana_admin_user }}"
+        password: "{{ grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: grafana_search
+
+    - name: Report what Grafana sees
+      ansible.builtin.assert:
+        that:
+          - grafana_ds_health.json.status == 'OK'
+          - grafana_search.json | length == 2
+        success_msg:
+          - "GRAFANA VERIFIED: {{ grafana_url }} (database {{ grafana_health.json.database }}, version {{ grafana_health.json.version }})"
+          - "data source {{ grafana_datasource_uid }}: {{ grafana_ds_health.json.status }} - {{ grafana_ds_health.json.message }}"
+          - "dashboards: {{ grafana_search.json | map(attribute='title') | join(', ') }} in folder {{ grafana_search.json[0].folderTitle | default('?') }}"

@@ -1,0 +1,22 @@
+[Unit]
+Description=NBD Lab 4 - request log generator (stream)
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ generator_user }}
+Group={{ generator_user }}
+EnvironmentFile={{ generator_env_file }}
+WorkingDirectory={{ generator_home }}
+ExecStart={{ generator_home }}/venv/bin/python -m loadgen stream --rate {{ generator_rate }} --interval {{ generator_interval }}
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+
+[Install]
+WantedBy=multi-user.target

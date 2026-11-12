@@ -1,0 +1,18 @@
+---
+grafana_version: "13.2.3"
+grafana_build: "36482603486"
+grafana_sha256: "55ec511999f9c56f3c26b633d0dc31b750c77a682a5ef379edf0d3fe634a7a2f"
+grafana_deb_mirror: "https://mirror.yandex.ru/mirrors/packages.grafana.com/oss/deb/pool/main/g/grafana"
+grafana_deb_url: "{{ grafana_deb_mirror }}/grafana_{{ grafana_version }}_{{ grafana_build }}_linux_amd64.deb"
+grafana_port: 3000
+grafana_min_version: "11.6.0"
+grafana_url: "http://127.0.0.1:{{ grafana_port }}"
+grafana_plugins_dir: /var/lib/grafana/plugins
+grafana_clickhouse_plugin: grafana-clickhouse-datasource
+grafana_clickhouse_plugin_version: "4.23.4"
+grafana_datasource_uid: clickhouse-lab4
+grafana_dashboards_dir: /var/lib/grafana/nbd-lab4-dashboards
+grafana_dashboards_source: "{{ lab4_root }}/dashboards"
+grafana_dashboards: [services, clickhouse]
+grafana_admin_user: admin
+grafana_admin_password: "{{ vault_grafana_admin_password | default('') }}"

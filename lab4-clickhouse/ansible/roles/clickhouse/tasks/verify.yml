@@ -1,0 +1,44 @@
+---
+- name: Ask the server for its version and settings
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: >-
+      SELECT version() AS version, uptime() AS uptime,
+      (SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage_to_ram_ratio') AS memory_ratio,
+      (SELECT count() FROM system.users WHERE name IN ('lab4_writer', 'lab4_grafana')) AS lab_users
+    return_content: true
+  register: clickhouse_info
+
+- name: Try a query without credentials
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?query=SELECT%201"
+    status_code: "{{ clickhouse_http_status }}"
+    return_content: true
+  register: clickhouse_anonymous
+
+- name: List the ClickHouse listeners
+  ansible.builtin.command:
+    cmd: "ss -H -ltnp '( sport = :{{ clickhouse_http_port }} or sport = :{{ clickhouse_tcp_port }} )'"
+  register: clickhouse_listeners
+  changed_when: false
+
+- name: Check version, users, authentication and bind address
+  ansible.builtin.assert:
+    that:
+      - info.version == clickhouse_version
+      - info.lab_users | int == 2
+      - clickhouse_anonymous.status != 200
+      - clickhouse_listeners.stdout_lines | length >= 2
+      - clickhouse_listeners.stdout_lines | select('search', '127\.0\.0\.1:') | list | length == clickhouse_listeners.stdout_lines | length
+    success_msg:
+      - "CLICKHOUSE VERIFIED"
+      - "version {{ info.version }}, uptime {{ info.uptime }} s, memory ratio {{ info.memory_ratio }}"
+      - "lab users present: {{ info.lab_users }}"
+      - "anonymous query rejected with HTTP {{ clickhouse_anonymous.status }}"
+      - "listening on: {{ clickhouse_listeners.stdout_lines | map('split') | map(attribute=3) | join(', ') }}"
+  vars:
+    info: "{{ clickhouse_info.json.data[0] }}"
