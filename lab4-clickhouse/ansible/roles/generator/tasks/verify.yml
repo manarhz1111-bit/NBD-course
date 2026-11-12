@@ -1,0 +1,36 @@
+---
+- name: Wait for fresh rows from the stream
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: >-
+      SELECT
+        (SELECT count() FROM {{ clickhouse_database }}.requests) AS raw_rows,
+        (SELECT count() FROM {{ clickhouse_database }}.requests WHERE ts >= now() - INTERVAL 1 MINUTE) AS last_minute,
+        (SELECT min(ts) FROM {{ clickhouse_database }}.requests) AS oldest,
+        (SELECT max(ts) FROM {{ clickhouse_database }}.requests) AS newest,
+        (SELECT sum(requests) FROM {{ clickhouse_database }}.requests_1m) AS rollup_requests,
+        (SELECT count() FROM {{ clickhouse_database }}.requests_1m) AS rollup_rows,
+        (SELECT count() FROM {{ clickhouse_database }}.deployments) AS deployment_events
+    return_content: true
+  register: generator_state
+  until: generator_state.json.data[0].last_minute | int > 0
+  retries: 12
+  delay: 5
+
+- name: Check the stream and the materialized view
+  ansible.builtin.assert:
+    that:
+      - s.last_minute | int > 0
+      - s.rollup_requests | int >= (s.raw_rows | int * 0.99)
+    success_msg:
+      - "PIPELINE VERIFIED: generator -> {{ clickhouse_database }}.requests -> requests_1m_mv -> requests_1m"
+      - "raw rows: {{ s.raw_rows }} from {{ s.oldest }} to {{ s.newest }} UTC"
+      - "rows in the last minute: {{ s.last_minute }}"
+      - "rollup: {{ s.rollup_rows }} rows covering {{ s.rollup_requests }} requests"
+      - "deployment events: {{ s.deployment_events }}"
+  vars:
+    s: "{{ generator_state.json.data[0] }}"

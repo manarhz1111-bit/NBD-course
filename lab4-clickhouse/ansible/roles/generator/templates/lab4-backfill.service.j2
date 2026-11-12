@@ -1,0 +1,18 @@
+[Unit]
+Description=NBD Lab 4 - request log generator (history backfill)
+After=network-online.target clickhouse-server.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User={{ generator_user }}
+Group={{ generator_user }}
+EnvironmentFile={{ generator_env_file }}
+WorkingDirectory={{ generator_home }}
+ExecStart={{ generator_home }}/venv/bin/python -m loadgen backfill --hours {{ generator_backfill_hours }} --rate {{ generator_rate }}
+TimeoutStartSec=3600
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true

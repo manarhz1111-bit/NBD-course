@@ -1,0 +1,59 @@
+---
+- name: Look for an existing Grafana installation
+  ansible.builtin.stat:
+    path: /usr/share/grafana/bin/grafana
+  register: grafana_binary
+
+- name: Install Grafana OSS {{ grafana_version }}
+  when: not grafana_binary.stat.exists
+  block:
+    - name: Install Grafana package prerequisites
+      ansible.builtin.apt:
+        name: [adduser, libfontconfig1, musl]
+        state: present
+
+    - name: Create the download directory
+      ansible.builtin.file:
+        path: /opt/src
+        state: directory
+        mode: "0755"
+
+    - name: Download the Grafana package
+      ansible.builtin.get_url:
+        url: "{{ grafana_deb_url }}"
+        dest: "/opt/src/grafana_{{ grafana_version }}_linux_amd64.deb"
+        checksum: "sha256:{{ grafana_sha256 }}"
+        mode: "0644"
+
+    - name: Install the Grafana package
+      ansible.builtin.apt:
+        deb: "/opt/src/grafana_{{ grafana_version }}_linux_amd64.deb"
+        state: present
+
+- name: Read the installed Grafana version
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f=${Version} grafana
+  register: grafana_installed_version
+  changed_when: false
+
+- name: Require a Grafana version the ClickHouse plugin supports
+  ansible.builtin.assert:
+    that: grafana_installed_version.stdout is version(grafana_min_version, '>=')
+    fail_msg: "Grafana {{ grafana_installed_version.stdout }} found, the plugin needs {{ grafana_min_version }} or newer"
+    success_msg: "Grafana {{ grafana_installed_version.stdout }} (expected {{ grafana_version }}, minimum {{ grafana_min_version }})"
+
+- name: Bind Grafana to localhost
+  ansible.builtin.lineinfile:
+    path: /etc/grafana/grafana.ini
+    regexp: "{{ item.regexp }}"
+    line: "{{ item.line }}"
+  loop:
+    - { regexp: '^;?http_addr =', line: 'http_addr = 127.0.0.1' }
+    - { regexp: '^;?http_port =', line: 'http_port = {{ grafana_port }}' }
+  notify: Restart Grafana
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    enabled: true
+    state: started

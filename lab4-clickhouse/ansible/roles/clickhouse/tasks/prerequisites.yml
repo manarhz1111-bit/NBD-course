@@ -1,0 +1,25 @@
+---
+- name: Require enough memory for ClickHouse next to the other labs
+  ansible.builtin.assert:
+    that: ansible_facts['memtotal_mb'] >= clickhouse_min_memory_mb
+    fail_msg: "{{ ansible_facts['memtotal_mb'] }} MB RAM, at least {{ clickhouse_min_memory_mb }} MB needed"
+    quiet: true
+
+- name: Install the socket inspection tool
+  ansible.builtin.apt:
+    name: [iproute2]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Find listeners on the ClickHouse ports
+  ansible.builtin.command:
+    cmd: "ss -H -ltnp '( sport = :{{ clickhouse_http_port }} or sport = :{{ clickhouse_tcp_port }} )'"
+  register: clickhouse_port_owners
+  changed_when: false
+
+- name: Require the ports to be free or already used by ClickHouse
+  ansible.builtin.assert:
+    that: clickhouse_port_owners.stdout_lines | reject('search', 'clickhouse') | list | length == 0
+    fail_msg: "{{ clickhouse_port_owners.stdout_lines }}"
+    quiet: true

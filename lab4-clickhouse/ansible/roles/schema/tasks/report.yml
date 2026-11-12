@@ -1,0 +1,60 @@
+---
+- name: Run the report queries
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=PrettyCompactMonoBlock&output_format_pretty_color=0&output_format_pretty_grid_charset=ASCII"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "{{ item.sql }}"
+    return_content: true
+  loop: "{{ schema_report_queries }}"
+  loop_control:
+    label: "{{ item.title }}"
+  register: schema_report
+
+- name: Show the report tables
+  ansible.builtin.debug:
+    msg: "{{ [item.item.title] + item.content.splitlines() }}"
+  loop: "{{ schema_report.results }}"
+  loop_control:
+    label: "{{ item.item.title }}"
+
+- name: Explain which partitions and granules a filtered query reads
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=TSVRaw"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "{{ schema_explain_query }}"
+    return_content: true
+  register: schema_explain
+
+- name: Show the index usage
+  ansible.builtin.debug:
+    msg: "{{ schema_explain.content.splitlines() }}"
+
+- name: Run the same question on the raw table and on the rollup
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON&use_query_cache=0"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "{{ item.value }}"
+    return_content: true
+  loop: "{{ schema_benchmark | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  register: schema_bench
+
+- name: Show what each variant had to read
+  ansible.builtin.debug:
+    msg: >-
+      {%- set rows = [] -%}
+      {%- for r in schema_bench.results -%}
+      {%- set _ = rows.append('%-6s read %12s rows, %10.1f MiB in %.3f s' | format(
+            r.item.key, r.json.statistics.rows_read, r.json.statistics.bytes_read / 1048576, r.json.statistics.elapsed)) -%}
+      {%- endfor -%}
+      {{ rows }}

@@ -1,0 +1,46 @@
+---
+- name: Create the database, tables and the materialized view
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "{{ lookup('ansible.builtin.file', item) }}"
+  loop: "{{ query('ansible.builtin.fileglob', schema_sql_dir ~ '/*.sql') | sort }}"
+  loop_control:
+    label: "{{ item | basename }}"
+  tags: [part2_schema]
+
+- name: Read the lab4 tables back
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: >-
+      SELECT name, engine, partition_key, sorting_key, primary_key
+      FROM system.tables WHERE database = '{{ clickhouse_database }}' ORDER BY name
+    return_content: true
+  register: schema_tables
+  tags: [part2_schema]
+
+- name: Check every table has the intended engine
+  ansible.builtin.assert:
+    that:
+      - schema_tables.json.data | items2dict(key_name='name', value_name='engine') == schema_expected_tables
+    success_msg: "{{ ['SCHEMA VERIFIED'] + schema_table_rows }}"
+  vars:
+    schema_table_rows: >-
+      {%- set rows = [] -%}
+      {%- for t in schema_tables.json.data -%}
+      {%- set _ = rows.append('%-15s %-21s partition: %-17s order: %-26s primary: %s' | format(
+            t.name, t.engine, t.partition_key or '-', t.sorting_key or '-', t.primary_key or '-')) -%}
+      {%- endfor -%}
+      {{ rows }}
+  tags: [part2_schema]
+
+- name: Check what each lab user may and may not do
+  ansible.builtin.import_tasks: access.yml
+  tags: [part2_access]

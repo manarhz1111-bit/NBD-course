@@ -1,0 +1,5 @@
+---
+vault_clickhouse_admin_password: "CHANGE_ME"
+vault_clickhouse_writer_password: "CHANGE_ME"
+vault_clickhouse_grafana_password: "CHANGE_ME"
+vault_grafana_admin_password: ""
