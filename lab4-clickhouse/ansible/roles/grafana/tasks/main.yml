@@ -1,0 +1,16 @@
+---
+- name: Install Grafana when it is not on the host yet
+  ansible.builtin.import_tasks: install.yml
+  tags: [part4_install]
+
+- name: Install the ClickHouse data source plugin
+  ansible.builtin.import_tasks: plugin.yml
+  tags: [part4_plugin]
+
+- name: Provision the data source and the dashboards
+  ansible.builtin.import_tasks: provision.yml
+  tags: [part4_provision]
+
+- name: Verify Grafana
+  ansible.builtin.import_tasks: verify.yml
+  tags: [part4_verify]

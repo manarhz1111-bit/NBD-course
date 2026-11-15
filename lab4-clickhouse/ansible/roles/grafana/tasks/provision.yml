@@ -1,0 +1,38 @@
+---
+- name: Create the dashboard directory
+  ansible.builtin.file:
+    path: "{{ grafana_dashboards_dir }}"
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+
+- name: Provision the ClickHouse data source
+  ansible.builtin.template:
+    src: datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/clickhouse-lab4.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Provision the dashboard folder
+  ansible.builtin.template:
+    src: dashboards.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/nbd-lab4.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Copy the dashboards
+  ansible.builtin.copy:
+    src: "{{ grafana_dashboards_source }}/{{ item }}.json"
+    dest: "{{ grafana_dashboards_dir }}/nbd-lab4-{{ item }}.json"
+    owner: root
+    group: grafana
+    mode: "0640"
+  loop: "{{ grafana_dashboards }}"
+
+- name: Apply Grafana changes now
+  ansible.builtin.meta: flush_handlers

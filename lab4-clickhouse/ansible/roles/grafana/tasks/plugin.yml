@@ -1,0 +1,34 @@
+---
+- name: Read the installed plugin manifest
+  ansible.builtin.slurp:
+    src: "{{ grafana_plugins_dir }}/{{ grafana_clickhouse_plugin }}/plugin.json"
+  register: grafana_plugin_manifest
+  failed_when: false
+
+- name: Decide whether the plugin must be (re)installed
+  ansible.builtin.set_fact:
+    grafana_plugin_installed: >-
+      {{ (grafana_plugin_manifest.content | default('e30=') | b64decode | from_json).info.version | default('none') }}
+
+- name: Install the ClickHouse plugin version {{ grafana_clickhouse_plugin_version }}
+  when: grafana_plugin_installed != grafana_clickhouse_plugin_version
+  block:
+    - name: Remove a different plugin version
+      ansible.builtin.file:
+        path: "{{ grafana_plugins_dir }}/{{ grafana_clickhouse_plugin }}"
+        state: absent
+
+    - name: Install the plugin with grafana cli
+      ansible.builtin.command:
+        cmd: >-
+          grafana cli --homepath /usr/share/grafana --pluginsDir {{ grafana_plugins_dir }}
+          plugins install {{ grafana_clickhouse_plugin }} {{ grafana_clickhouse_plugin_version }}
+      changed_when: true
+      notify: Restart Grafana
+
+    - name: Give the plugin files to Grafana
+      ansible.builtin.file:
+        path: "{{ grafana_plugins_dir }}/{{ grafana_clickhouse_plugin }}"
+        owner: grafana
+        group: grafana
+        recurse: true

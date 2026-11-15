@@ -1,0 +1,12 @@
+---
+- name: Install the generator
+  ansible.builtin.import_tasks: install.yml
+  tags: [part3_install]
+
+- name: Fill history and start the stream
+  ansible.builtin.import_tasks: run.yml
+  tags: [part3_run]
+
+- name: Verify that events arrive
+  ansible.builtin.import_tasks: verify.yml
+  tags: [part3_verify]

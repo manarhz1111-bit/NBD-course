@@ -1,0 +1,42 @@
+---
+- name: Send each probe as the user under test
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON{{ item.settings | default('') }}"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts[item.account].name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts[item.account].password }}"
+    body: "{{ item.query }}"
+    status_code: "{{ clickhouse_http_status }}"
+    return_content: true
+  loop: "{{ schema_access_checks }}"
+  loop_control:
+    label: "{{ clickhouse_accounts[item.account].name }}: {{ item.action }}"
+  register: schema_probes
+
+- name: Remove the probe rows
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "TRUNCATE TABLE IF EXISTS {{ clickhouse_database }}.insert_lab"
+  changed_when: false
+
+- name: Compare every answer with the expected one
+  ansible.builtin.assert:
+    that: schema_access_rows | select('search', 'MISMATCH') | list | length == 0
+    fail_msg: "{{ schema_access_rows }}"
+    success_msg: "{{ ['ACCESS MATRIX VERIFIED'] + schema_access_rows }}"
+  vars:
+    schema_access_rows: >-
+      {%- set rows = [] -%}
+      {%- for r in schema_probes.results -%}
+      {%- set denied = r.status != 200 and (r.content | default('')) is search('ACCESS_DENIED|READONLY') -%}
+      {%- set ok = (r.item.allowed and r.status == 200) or (not r.item.allowed and denied) -%}
+      {%- set _ = rows.append('%-13s | %-34s | expected %-7s | HTTP %s %s' | format(
+            clickhouse_accounts[r.item.account].name, r.item.action,
+            'allowed' if r.item.allowed else 'denied', r.status, 'OK' if ok else 'MISMATCH')) -%}
+      {%- endfor -%}
+      {{ rows }}

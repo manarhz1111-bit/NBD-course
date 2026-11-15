@@ -1,0 +1,49 @@
+---
+- name: Install Python venv support
+  ansible.builtin.apt:
+    name: [python3-venv]
+    state: present
+
+- name: Create the generator system user
+  ansible.builtin.user:
+    name: "{{ generator_user }}"
+    system: true
+    create_home: false
+    home: /nonexistent
+    shell: /usr/sbin/nologin
+
+- name: Copy the generator package
+  ansible.builtin.copy:
+    src: "{{ generator_source }}/{{ item }}"
+    dest: "{{ generator_home }}/"
+    owner: root
+    group: root
+    mode: u=rwX,g=rX,o=rX
+  loop: [loadgen, requirements.txt]
+  notify: Restart generator
+
+- name: Install the Python dependencies into a virtualenv
+  ansible.builtin.pip:
+    requirements: "{{ generator_home }}/requirements.txt"
+    virtualenv: "{{ generator_home }}/venv"
+    virtualenv_command: python3 -m venv
+  notify: Restart generator
+
+- name: Write the writer credentials
+  ansible.builtin.template:
+    src: generator.env.j2
+    dest: "{{ generator_env_file }}"
+    owner: root
+    group: "{{ generator_user }}"
+    mode: "0640"
+  notify: Restart generator
+
+- name: Install the systemd units
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop: [lab4-generator.service, lab4-backfill.service]
+  notify: Restart generator

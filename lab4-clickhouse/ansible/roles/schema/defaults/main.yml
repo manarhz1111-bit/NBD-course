@@ -1,0 +1,83 @@
+---
+schema_sql_dir: "{{ lab4_root }}/sql/schema"
+schema_expected_tables:
+  requests: MergeTree
+  requests_1m: AggregatingMergeTree
+  requests_1m_mv: MaterializedView
+  deployments: MergeTree
+  insert_lab: MergeTree
+
+schema_access_checks:
+  - account: writer
+    action: insert into lab4.insert_lab
+    query: "INSERT INTO lab4.insert_lab (ts, service) VALUES (now64(3), 'access-probe')"
+    allowed: true
+  - account: writer
+    action: read lab4.requests
+    query: "SELECT count() FROM lab4.requests"
+    allowed: false
+  - account: writer
+    action: create a table in lab4
+    query: "CREATE TABLE lab4.access_probe (x UInt8) ENGINE = Memory"
+    allowed: false
+  - account: grafana
+    action: read lab4.requests
+    query: "SELECT count() FROM lab4.requests"
+    allowed: true
+  - account: grafana
+    action: read system.parts
+    query: "SELECT count() FROM system.parts"
+    allowed: true
+  - account: grafana
+    action: raise max_execution_time to 60
+    query: "SELECT 1"
+    settings: "&max_execution_time=60"
+    allowed: true
+  - account: grafana
+    action: switch readonly off
+    query: "SELECT 1"
+    settings: "&readonly=0"
+    allowed: false
+  - account: grafana
+    action: insert into lab4.insert_lab
+    query: "INSERT INTO lab4.insert_lab (ts, service) VALUES (now64(3), 'access-probe')"
+    allowed: false
+
+schema_report_queries:
+  - title: Engines and keys
+    sql: >-
+      SELECT name, engine, partition_key, sorting_key, primary_key, total_rows,
+      formatReadableSize(total_bytes) AS on_disk
+      FROM system.tables WHERE database = 'lab4' ORDER BY name
+  - title: Partitions and parts of lab4.requests
+    sql: >-
+      SELECT partition, count() AS active_parts, sum(rows) AS rows, max(level) AS max_level,
+      formatReadableSize(sum(bytes_on_disk)) AS on_disk
+      FROM system.parts WHERE database = 'lab4' AND table = 'requests' AND active
+      GROUP BY partition ORDER BY partition
+  - title: Compression per column of lab4.requests
+    sql: >-
+      SELECT name, type, compression_codec AS codec,
+      formatReadableSize(data_compressed_bytes) AS compressed,
+      formatReadableSize(data_uncompressed_bytes) AS uncompressed,
+      round(data_uncompressed_bytes / greatest(1, data_compressed_bytes), 1) AS ratio
+      FROM system.columns WHERE database = 'lab4' AND table = 'requests'
+      ORDER BY data_compressed_bytes DESC
+  - title: Raw table compared with the one-minute rollup
+    sql: >-
+      SELECT table, sum(rows) AS rows, formatReadableSize(sum(bytes_on_disk)) AS on_disk
+      FROM system.parts WHERE database = 'lab4' AND table IN ('requests', 'requests_1m') AND active
+      GROUP BY table ORDER BY table
+
+schema_explain_query: >-
+  EXPLAIN indexes = 1
+  SELECT count() FROM lab4.requests
+  WHERE service = 'checkoutservice' AND endpoint = 'PlaceOrder' AND ts >= now() - INTERVAL 1 HOUR
+
+schema_benchmark:
+  raw: >-
+    SELECT service, quantile(0.95)(duration_ms) AS p95, countIf(status >= 500) / count() AS errors
+    FROM lab4.requests WHERE ts >= now() - INTERVAL 24 HOUR GROUP BY service ORDER BY service
+  rollup: >-
+    SELECT service, quantilesTDigestMerge(0.5, 0.95, 0.99)(duration)[2] AS p95, sum(server_errors) / sum(requests) AS errors
+    FROM lab4.requests_1m WHERE minute >= now() - INTERVAL 24 HOUR GROUP BY service ORDER BY service

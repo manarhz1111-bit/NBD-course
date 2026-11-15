@@ -1,0 +1,9 @@
+ansible/group_vars/all/vault.yml
+ansible/collections/
+.vault_pass*
+__pycache__/
+*.pyc
+.venv/
+venv/
+.vscode/
+.idea/

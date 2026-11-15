@@ -1,0 +1,27 @@
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <size>100M</size>
+        <count>5</count>
+    </logger>
+
+    <listen_host>127.0.0.1</listen_host>
+    <http_port>{{ clickhouse_http_port }}</http_port>
+    <tcp_port>{{ clickhouse_tcp_port }}</tcp_port>
+    <mysql_port remove="1"/>
+    <postgresql_port remove="1"/>
+    <interserver_http_port remove="1"/>
+
+    <max_server_memory_usage_to_ram_ratio>{{ clickhouse_memory_ratio }}</max_server_memory_usage_to_ram_ratio>
+    <mark_cache_size>{{ clickhouse_mark_cache_bytes }}</mark_cache_size>
+
+{% for log in ['query_log', 'part_log', 'asynchronous_metric_log'] %}
+    <{{ log }} replace="1">
+        <database>system</database>
+        <table>{{ log }}</table>
+        <partition_by>event_date</partition_by>
+        <ttl>event_date + INTERVAL {{ clickhouse_system_log_ttl_days }} DAY DELETE</ttl>
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+    </{{ log }}>
+{% endfor %}
+</clickhouse>

@@ -1,0 +1,28 @@
+---
+- name: Count rows already stored
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "SELECT count() AS rows FROM {{ clickhouse_database }}.requests"
+    return_content: true
+  register: generator_existing
+
+- name: Generate history on the first run, hours {{ generator_backfill_hours }}
+  ansible.builtin.systemd_service:
+    name: lab4-backfill
+    state: started
+    daemon_reload: true
+  when: generator_existing.json.data[0].rows | int == 0
+
+- name: Enable and start the stream
+  ansible.builtin.systemd_service:
+    name: lab4-generator
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply generator changes now
+  ansible.builtin.meta: flush_handlers

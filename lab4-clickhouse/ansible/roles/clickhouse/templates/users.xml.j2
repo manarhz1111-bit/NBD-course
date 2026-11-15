@@ -1,0 +1,55 @@
+<clickhouse>
+    <profiles>
+        <lab4_grafana>
+            <readonly>1</readonly>
+            <max_execution_time>{{ clickhouse_grafana_max_execution_time }}</max_execution_time>
+            <max_memory_usage>{{ clickhouse_grafana_max_memory_bytes }}</max_memory_usage>
+            <constraints>
+                <max_execution_time>
+                    <max>120</max>
+                    <changeable_in_readonly/>
+                </max_execution_time>
+            </constraints>
+        </lab4_grafana>
+    </profiles>
+
+    <users>
+        <{{ clickhouse_accounts.admin.name }}>
+            <password remove="1"/>
+            <password_sha256_hex>{{ clickhouse_accounts.admin.password | hash('sha256') }}</password_sha256_hex>
+            <networks replace="1">
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <access_management>1</access_management>
+        </{{ clickhouse_accounts.admin.name }}>
+
+        <{{ clickhouse_accounts.writer.name }}>
+            <password_sha256_hex>{{ clickhouse_accounts.writer.password | hash('sha256') }}</password_sha256_hex>
+            <networks>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <grants>
+{% for grant in clickhouse_writer_grants %}
+                <query>{{ grant }}</query>
+{% endfor %}
+            </grants>
+        </{{ clickhouse_accounts.writer.name }}>
+
+        <{{ clickhouse_accounts.grafana.name }}>
+            <password_sha256_hex>{{ clickhouse_accounts.grafana.password | hash('sha256') }}</password_sha256_hex>
+            <networks>
+                <ip>127.0.0.1</ip>
+            </networks>
+            <profile>lab4_grafana</profile>
+            <quota>default</quota>
+            <grants>
+{% for grant in clickhouse_grafana_grants %}
+                <query>{{ grant }}</query>
+{% endfor %}
+            </grants>
+        </{{ clickhouse_accounts.grafana.name }}>
+    </users>
+</clickhouse>

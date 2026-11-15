@@ -1,0 +1,21 @@
+---
+clickhouse_version: "26.8.36.3"
+clickhouse_packages: [clickhouse-common-static, clickhouse-server, clickhouse-client]
+clickhouse_repo_url: "https://packages.clickhouse.com/deb"
+clickhouse_repo_key: "https://packages.clickhouse.com/rpm/lts/repodata/repomd.xml.key"
+clickhouse_memory_ratio: 0.25
+clickhouse_mark_cache_bytes: 268435456
+clickhouse_system_log_ttl_days: 7
+clickhouse_min_memory_mb: 5500
+
+clickhouse_grafana_max_execution_time: 30
+clickhouse_grafana_max_memory_bytes: 2000000000
+
+clickhouse_writer_grants:
+  - "GRANT INSERT ON {{ clickhouse_database }}.requests"
+  - "GRANT INSERT ON {{ clickhouse_database }}.deployments"
+  - "GRANT INSERT ON {{ clickhouse_database }}.insert_lab"
+
+clickhouse_grafana_grants:
+  - "GRANT SELECT ON {{ clickhouse_database }}.*"
+  - "GRANT SELECT ON system.*"

@@ -1,0 +1,20 @@
+---
+clickhouse_http_port: 8123
+clickhouse_tcp_port: 9000
+clickhouse_url: "http://127.0.0.1:{{ clickhouse_http_port }}"
+clickhouse_database: lab4
+
+clickhouse_accounts:
+  admin:
+    name: default
+    password: "{{ vault_clickhouse_admin_password }}"
+  writer:
+    name: lab4_writer
+    password: "{{ vault_clickhouse_writer_password }}"
+  grafana:
+    name: lab4_grafana
+    password: "{{ vault_clickhouse_grafana_password }}"
+
+clickhouse_http_status: [200, 400, 401, 403, 404, 500, 501, 503]
+
+lab4_root: "{{ playbook_dir | dirname }}"

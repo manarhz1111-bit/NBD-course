@@ -1,0 +1,16 @@
+---
+- name: Check the host before installing
+  ansible.builtin.import_tasks: prerequisites.yml
+  tags: [part1_prereq]
+
+- name: Install ClickHouse from the official repository
+  ansible.builtin.import_tasks: install.yml
+  tags: [part1_install]
+
+- name: Configure the server and its users
+  ansible.builtin.import_tasks: configure.yml
+  tags: [part1_config]
+
+- name: Verify the running server
+  ansible.builtin.import_tasks: verify.yml
+  tags: [part1_verify]

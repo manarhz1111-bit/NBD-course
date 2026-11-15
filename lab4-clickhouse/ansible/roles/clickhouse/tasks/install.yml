@@ -1,0 +1,32 @@
+---
+- name: Install repository tooling
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg, python3-debian]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add the ClickHouse APT repository
+  ansible.builtin.deb822_repository:
+    name: clickhouse
+    types: deb
+    uris: "{{ clickhouse_repo_url }}"
+    suites: lts
+    components: main
+    architectures: amd64
+    signed_by: "{{ clickhouse_repo_key }}"
+  register: clickhouse_repo
+
+- name: Install ClickHouse {{ clickhouse_version }}
+  ansible.builtin.apt:
+    name: "{{ clickhouse_packages | product([clickhouse_version]) | map('join', '=') | list }}"
+    state: present
+    update_cache: "{{ clickhouse_repo is changed }}"
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+
+- name: Hold ClickHouse at the installed version
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop: "{{ clickhouse_packages }}"

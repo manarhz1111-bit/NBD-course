@@ -1,0 +1,51 @@
+---
+- name: "Reset insert_lab and stop merges before {{ generator_mode }}"
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: "{{ item }}"
+  loop:
+    - "TRUNCATE TABLE {{ clickhouse_database }}.insert_lab"
+    - "SYSTEM STOP MERGES {{ clickhouse_database }}.insert_lab"
+  changed_when: false
+
+- name: "Insert rows with the strategy {{ generator_mode }}"
+  ansible.builtin.command:
+    cmd: >-
+      {{ generator_home }}/venv/bin/python -m loadgen inserts
+      --mode {{ generator_mode }} --rows {{ generator_experiment_rows }}
+      --workers {{ generator_experiment_workers }} --table insert_lab
+    chdir: "{{ generator_home }}"
+  environment:
+    CH_HOST: 127.0.0.1
+    CH_PORT: "{{ clickhouse_http_port }}"
+    CH_DATABASE: "{{ clickhouse_database }}"
+    CH_USER: "{{ clickhouse_accounts.writer.name }}"
+    CH_PASSWORD: "{{ clickhouse_accounts.writer.password }}"
+  register: generator_run
+  changed_when: true
+
+- name: "Count active parts after {{ generator_mode }}"
+  ansible.builtin.uri:
+    url: "{{ clickhouse_url }}/?default_format=JSON"
+    method: POST
+    headers:
+      X-ClickHouse-User: "{{ clickhouse_accounts.admin.name }}"
+      X-ClickHouse-Key: "{{ clickhouse_accounts.admin.password }}"
+    body: >-
+      SELECT count() AS parts, sum(rows) AS rows
+      FROM system.parts WHERE database = '{{ clickhouse_database }}' AND table = 'insert_lab' AND active
+    return_content: true
+  register: generator_parts
+
+- name: "Record the result of {{ generator_mode }}"
+  ansible.builtin.set_fact:
+    generator_experiment_results: >-
+      {{ generator_experiment_results | default([]) + ['%-6s %4s INSERT statements in %6.2f s -> %4s active parts, %s rows' | format(
+           run.mode, run.insert_statements, run.seconds,
+           generator_parts.json.data[0].parts, generator_parts.json.data[0].rows)] }}
+  vars:
+    run: "{{ generator_run.stdout_lines | last | from_json }}"
