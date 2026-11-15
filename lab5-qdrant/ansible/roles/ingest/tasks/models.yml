@@ -1,0 +1,14 @@
+---
+- name: Download the dense and sparse models
+  ansible.builtin.command:
+    cmd: "{{ search_python }} -m shopsearch warmup"
+    chdir: "{{ search_home }}/app"
+    creates: "{{ search_home }}/models/.ready"
+  become: true
+  become_user: "{{ search_user }}"
+  environment: "{{ ingest_env | combine({'QDRANT_API_KEY': qdrant_read_key}) }}"
+  register: ingest_warmup
+
+- name: Report the models
+  ansible.builtin.debug:
+    msg: "{{ ingest_warmup.stdout | from_json if ingest_warmup is changed else 'models already in ' ~ search_home ~ '/models' }}"

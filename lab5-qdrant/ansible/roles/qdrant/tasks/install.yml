@@ -1,0 +1,58 @@
+---
+- name: Read the installed Qdrant package version
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f=${db:Status-Abbrev}${Version} qdrant
+  register: qdrant_package
+  changed_when: false
+  failed_when: false
+
+- name: Install Qdrant {{ qdrant_version }}
+  when: qdrant_package.stdout | replace(' ', '') != 'ii' ~ qdrant_version ~ '-1'
+  block:
+    - name: Create the download directory
+      ansible.builtin.file:
+        path: /opt/src
+        state: directory
+        mode: "0755"
+
+    - name: Download the Qdrant package
+      ansible.builtin.get_url:
+        url: "{{ qdrant_deb_url }}"
+        dest: "/opt/src/qdrant_{{ qdrant_version }}-1_amd64.deb"
+        checksum: "sha256:{{ qdrant_deb_sha256 }}"
+        mode: "0644"
+        timeout: 120
+
+    - name: Install the Qdrant package
+      ansible.builtin.apt:
+        deb: "/opt/src/qdrant_{{ qdrant_version }}-1_amd64.deb"
+        state: present
+      notify: Restart Qdrant
+
+- name: Create the Qdrant system user
+  ansible.builtin.user:
+    name: "{{ qdrant_user }}"
+    system: true
+    create_home: false
+    home: "{{ qdrant_home }}"
+    shell: /usr/sbin/nologin
+
+- name: Create the storage and snapshot directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ qdrant_user }}"
+    group: "{{ qdrant_user }}"
+    mode: "0750"
+  loop:
+    - "{{ qdrant_home }}"
+    - "{{ qdrant_home }}/storage"
+    - "{{ qdrant_home }}/snapshots"
+
+- name: Create the configuration directory
+  ansible.builtin.file:
+    path: "{{ qdrant_config | dirname }}"
+    state: directory
+    owner: root
+    group: "{{ qdrant_user }}"
+    mode: "0750"

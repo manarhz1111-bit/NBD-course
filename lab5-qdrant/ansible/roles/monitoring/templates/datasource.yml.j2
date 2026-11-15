@@ -1,0 +1,13 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus Lab 5
+    uid: {{ grafana_datasource_uid }}
+    type: prometheus
+    access: proxy
+    url: {{ prometheus_lab5_url }}
+    isDefault: false
+    editable: false
+    jsonData:
+      timeInterval: {{ prometheus_lab5_interval }}
+      httpMethod: POST

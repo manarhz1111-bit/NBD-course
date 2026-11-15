@@ -1,0 +1,23 @@
+log_level: INFO
+
+storage:
+  storage_path: {{ qdrant_home }}/storage
+  snapshots_path: {{ qdrant_home }}/snapshots
+  on_disk_payload: true
+  wal:
+    wal_capacity_mb: 32
+  optimizers:
+    default_segment_number: 2
+    indexing_threshold_kb: 10000
+
+service:
+  host: 127.0.0.1
+  http_port: {{ qdrant_http_port }}
+  grpc_port: {{ qdrant_grpc_port }}
+  enable_cors: false
+  max_request_size_mb: {{ qdrant_max_request_size_mb }}
+  api_key: {{ qdrant_admin_key | to_json }}
+  read_only_api_key: {{ qdrant_read_key | to_json }}
+  static_content_dir: {{ qdrant_home }}/static
+
+telemetry_disabled: true

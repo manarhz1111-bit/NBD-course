@@ -1,0 +1,4 @@
+---
+vault_qdrant_admin_key: "CHANGE_ME_32_CHARS_OR_MORE"
+vault_qdrant_read_key: "CHANGE_ME_ANOTHER_32_CHARS"
+vault_grafana_admin_password: ""

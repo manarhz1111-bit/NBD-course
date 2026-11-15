@@ -1,0 +1,54 @@
+---
+- name: Read the server version
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/"
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+  register: qdrant_root
+
+- name: Find the socket Qdrant listens on
+  ansible.builtin.command:
+    cmd: "ss -H -ltn '( sport = :{{ qdrant_http_port }} or sport = :{{ qdrant_grpc_port }} )'"
+  register: qdrant_sockets
+  changed_when: false
+  until: qdrant_sockets.stdout_lines | length == 2
+  retries: 15
+  delay: 2
+
+- name: Probe the access rules
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}{{ item.path }}"
+    method: "{{ item.method }}"
+    headers: "{{ {'api-key': item.key} if item.key else {} }}"
+    body_format: json
+    body: "{{ item.body | default(omit) }}"
+    status_code: "{{ lab5_http_status }}"
+  register: qdrant_access
+  loop:
+    - { name: "no key, list collections", method: GET, path: /collections, key: "", expect: 401 }
+    - { name: "no key, health check", method: GET, path: /healthz, key: "", expect: 200 }
+    - { name: "read key, list collections", method: GET, path: /collections, key: "{{ qdrant_read_key }}", expect: 200 }
+    - { name: "read key, create collection", method: PUT, path: /collections/lab5_probe, key: "{{ qdrant_read_key }}",
+        body: { vectors: { size: 4, distance: Cosine } }, expect: 403 }
+    - { name: "admin key, cluster info", method: GET, path: /cluster, key: "{{ qdrant_admin_key }}", expect: 200 }
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Report the Qdrant installation
+  ansible.builtin.assert:
+    that:
+      - qdrant_root.json.version == qdrant_version
+      - qdrant_sockets.stdout_lines | length == 2
+      - qdrant_sockets.stdout_lines | select('search', '127.0.0.1:') | list | length == 2
+      - qdrant_access.results | map(attribute='status') | list == qdrant_access.results | map(attribute='item.expect') | list
+    success_msg: >-
+      {{ ['QDRANT VERIFIED: ' ~ qdrant_root.json.title ~ ' ' ~ qdrant_root.json.version
+          ~ ' on ' ~ (qdrant_sockets.stdout_lines | map('split') | map(attribute=3) | join(', '))]
+         + (qdrant_access.results | map(attribute='item.name')
+            | zip(qdrant_access.results | map(attribute='status'))
+            | map('join', ' -> ') | list) }}
+    fail_msg: >-
+      {{ ['version ' ~ qdrant_root.json.version, 'sockets ' ~ (qdrant_sockets.stdout_lines | join('; '))]
+         + (qdrant_access.results | map(attribute='item.name')
+            | zip(qdrant_access.results | map(attribute='status'), qdrant_access.results | map(attribute='item.expect'))
+            | map('join', ' -> ') | list) }}

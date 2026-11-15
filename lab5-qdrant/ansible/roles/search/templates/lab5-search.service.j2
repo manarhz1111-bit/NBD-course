@@ -1,0 +1,23 @@
+[Unit]
+Description=NBD Lab 5 - product search API
+After=network-online.target qdrant.service
+Wants=network-online.target qdrant.service
+
+[Service]
+Type=simple
+User={{ search_user }}
+Group={{ search_user }}
+EnvironmentFile={{ search_env_file }}
+WorkingDirectory={{ search_home }}/app
+ExecStart={{ search_python }} -m uvicorn shopsearch.api:app --host 127.0.0.1 --port {{ search_port }} --no-access-log
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ReadWritePaths={{ search_home }}/models
+
+[Install]
+WantedBy=multi-user.target

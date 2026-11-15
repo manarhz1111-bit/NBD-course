@@ -1,0 +1,16 @@
+---
+- name: Install the search application
+  ansible.builtin.import_tasks: install.yml
+  tags: [part2_install]
+
+- name: Download and check the embedding models
+  ansible.builtin.import_tasks: models.yml
+  tags: [part2_models]
+
+- name: Download the catalogue and load it into Qdrant
+  ansible.builtin.import_tasks: load.yml
+  tags: [part2_load]
+
+- name: Show how the collection is organised
+  ansible.builtin.import_tasks: report.yml
+  tags: [part2_report]

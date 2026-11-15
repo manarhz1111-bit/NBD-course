@@ -1,0 +1,12 @@
+---
+- name: Run a Prometheus instance for this lab
+  ansible.builtin.import_tasks: prometheus.yml
+  tags: [part4_prometheus]
+
+- name: Provision Grafana
+  ansible.builtin.import_tasks: grafana.yml
+  tags: [part4_grafana]
+
+- name: Verify monitoring
+  ansible.builtin.import_tasks: verify.yml
+  tags: [part4_verify]

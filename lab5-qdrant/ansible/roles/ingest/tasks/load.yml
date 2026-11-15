@@ -1,0 +1,43 @@
+---
+- name: Download the WANDS product catalogue
+  ansible.builtin.get_url:
+    url: "{{ ingest_dataset_base }}/{{ item.name }}"
+    dest: "{{ search_home }}/data/{{ item.name }}"
+    checksum: "sha256:{{ item.sha256 }}"
+    owner: root
+    group: "{{ search_user }}"
+    mode: "0640"
+    timeout: 300
+  loop: "{{ ingest_dataset_files }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: ingest_dataset
+
+- name: Read the collection state
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}"
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+    status_code: [200, 404]
+  register: ingest_collection
+
+- name: Embed the catalogue and upsert it into Qdrant
+  ansible.builtin.command:
+    cmd: "{{ search_python }} -m shopsearch ingest {{ '--recreate' if ingest_rebuild else '' }}"
+    chdir: "{{ search_home }}/app"
+  become: true
+  become_user: "{{ search_user }}"
+  environment: "{{ ingest_env | combine({'QDRANT_API_KEY': qdrant_admin_key, 'HF_HUB_OFFLINE': '1'}) }}"
+  vars:
+    ingest_rebuild: "{{ ingest_dataset is changed or search_app_copy is changed }}"
+  register: ingest_result
+  changed_when: true
+  when: >-
+    ingest_collection.status == 404
+    or ingest_collection.json.result.points_count | int != catalog_size | int
+    or ingest_dataset is changed
+    or search_app_copy is changed
+
+- name: Report the ingestion
+  ansible.builtin.debug:
+    msg: "{{ ingest_result.stdout | from_json if ingest_result is changed else 'collection ' ~ qdrant_collection ~ ' is up to date' }}"

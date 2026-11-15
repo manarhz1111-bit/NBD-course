@@ -1,0 +1,23 @@
+---
+prometheus_version: "3.15.0"
+prometheus_sha256: "2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0"
+prometheus_url_base: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}"
+prometheus_lab5_dir: /etc/prometheus-lab5
+prometheus_lab5_data: /var/lib/prometheus-lab5
+prometheus_lab5_url: "http://127.0.0.1:{{ prometheus_lab5_port }}"
+prometheus_lab5_interval: 5s
+prometheus_lab5_retention: 7d
+prometheus_lab5_jobs: [qdrant, product-search, prometheus-lab5]
+
+grafana_version: "13.2.3"
+grafana_build: "36482603486"
+grafana_sha256: "55ec511999f9c56f3c26b633d0dc31b750c77a682a5ef379edf0d3fe634a7a2f"
+grafana_deb_mirror: "https://mirror.yandex.ru/mirrors/packages.grafana.com/oss/deb/pool/main/g/grafana"
+grafana_deb_url: "{{ grafana_deb_mirror }}/grafana_{{ grafana_version }}_{{ grafana_build }}_linux_amd64.deb"
+grafana_plugins_dir: /var/lib/grafana/plugins
+grafana_datasource_uid: prometheus-lab5
+grafana_dashboards_dir: /var/lib/grafana/nbd-lab5-dashboards
+grafana_dashboards_source: "{{ lab5_root }}/dashboards"
+grafana_dashboards: [search]
+grafana_admin_user: admin
+grafana_admin_password: "{{ vault_grafana_admin_password | default('') }}"

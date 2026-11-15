@@ -1,0 +1,11 @@
+---
+search_env_dir: /etc/lab5-search
+search_env_file: "{{ search_env_dir }}/search.env"
+search_sample_queries:
+  - { q: "solid wood platform bed", mode: hybrid }
+  - { q: "удобное кресло для чтения", mode: dense }
+  - { q: "turquoise pillows", mode: sparse }
+  - { q: "outdoor dining set", mode: hybrid, category: Outdoor, min_rating: 4.5 }
+loadtest_duration: 15
+loadtest_levels: "1,2,4,8,16"
+bench_points: 100000

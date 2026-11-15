@@ -1,0 +1,8 @@
+---
+- name: Run the search API as a service
+  ansible.builtin.import_tasks: service.yml
+  tags: [part3_service]
+
+- name: Verify the search API
+  ansible.builtin.import_tasks: verify.yml
+  tags: [part3_verify]

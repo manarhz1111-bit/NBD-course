@@ -1,0 +1,14 @@
+---
+- name: Score dense, sparse and hybrid search on the question set
+  ansible.builtin.command:
+    cmd: "{{ search_python }} -m shopsearch eval"
+    chdir: "{{ search_home }}/app"
+  become: true
+  become_user: "{{ search_user }}"
+  environment: "{{ search_env | combine({'QDRANT_API_KEY': qdrant_read_key, 'HF_HUB_OFFLINE': '1', 'SEARCH_URL': search_url}) }}"
+  register: search_run
+  changed_when: false
+
+- name: Report retrieval quality
+  ansible.builtin.debug:
+    msg: "{{ search_run.stdout_lines }}"

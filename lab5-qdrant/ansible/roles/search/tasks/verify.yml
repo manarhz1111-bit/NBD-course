@@ -1,0 +1,49 @@
+---
+- name: Wait for the search API
+  ansible.builtin.uri:
+    url: "{{ search_url }}/healthz"
+    return_content: true
+  register: search_health
+  until: search_health.status == 200
+  retries: 30
+  delay: 3
+
+- name: Run sample searches
+  ansible.builtin.uri:
+    url: "{{ search_url }}/search?{{ search_params | urlencode }}"
+    return_content: true
+  register: search_samples
+  vars:
+    search_filters: "{{ item | dict2items | selectattr('key', 'in', ['category', 'min_rating']) | items2dict }}"
+    search_params: "{{ {'q': item.q, 'mode': item.mode, 'limit': 3} | combine(search_filters) }}"
+  loop: "{{ search_sample_queries }}"
+  loop_control:
+    label: "{{ item.mode }}: {{ item.q }}"
+
+- name: Read the API metrics
+  ansible.builtin.uri:
+    url: "{{ search_url }}/metrics"
+    return_content: true
+  register: search_metrics
+
+- name: Find the socket the API listens on
+  ansible.builtin.command:
+    cmd: "ss -H -ltn '( sport = :{{ search_port }} )'"
+  register: search_socket
+  changed_when: false
+
+- name: Report the search API
+  ansible.builtin.assert:
+    that:
+      - search_samples.results | map(attribute='json.hits') | map('length') | min > 0
+      - search_samples.results[3].json.hits | map(attribute='category') | unique == ['Outdoor']
+      - search_samples.results[3].json.hits | map(attribute='rating') | min >= 4.5
+      - "'lab5_search_requests_total' in search_metrics.content"
+      - search_socket.stdout is search('127.0.0.1:' ~ search_port)
+    success_msg: >-
+      {{ ['SEARCH API VERIFIED: ' ~ search_url ~ ', collection ' ~ search_health.json.collection ~ ' with ' ~ search_health.json.points ~ ' points']
+         + (search_samples.results | map(attribute='item.mode')
+            | zip(search_samples.results | map(attribute='item.q'),
+                  search_samples.results | map(attribute='json.took_ms.total') | map('string') | map('regex_replace', '$', ' ms'),
+                  search_samples.results | map(attribute='json.hits') | map('first') | map(attribute='name'))
+            | map('join', ' | ') | list) }}

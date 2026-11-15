@@ -1,0 +1,128 @@
+---
+- name: Create the Prometheus system group
+  ansible.builtin.group:
+    name: prometheus
+    system: true
+
+- name: Create the Prometheus system user
+  ansible.builtin.user:
+    name: prometheus
+    group: prometheus
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Look for the Prometheus binaries from the earlier labs
+  ansible.builtin.stat:
+    path: "/usr/local/bin/{{ item }}"
+  register: prometheus_binaries
+  loop: [prometheus, promtool]
+
+- name: Install Prometheus {{ prometheus_version }}
+  when: prometheus_binaries.results | rejectattr('stat.exists') | list | length > 0
+  block:
+    - name: Create the download directory
+      ansible.builtin.file:
+        path: /opt/src
+        state: directory
+        mode: "0755"
+
+    - name: Download Prometheus
+      ansible.builtin.get_url:
+        url: "{{ prometheus_url_base }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        checksum: "sha256:{{ prometheus_sha256 }}"
+        mode: "0644"
+
+    - name: Unpack Prometheus
+      ansible.builtin.unarchive:
+        src: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+        dest: /opt/src
+        remote_src: true
+        creates: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64/prometheus"
+
+    - name: Install the binaries
+      ansible.builtin.copy:
+        src: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        remote_src: true
+        owner: root
+        group: root
+        mode: "0755"
+      loop: [prometheus, promtool]
+
+- name: Read the Prometheus version
+  ansible.builtin.command:
+    cmd: /usr/local/bin/prometheus --version
+  register: prometheus_installed
+  changed_when: false
+
+- name: Find listeners on the Prometheus Lab 5 port
+  ansible.builtin.command:
+    cmd: "ss -H -ltnp '( sport = :{{ prometheus_lab5_port }} )'"
+  register: prometheus_port_owner
+  changed_when: false
+
+- name: Require the port to be free or already used by Prometheus
+  ansible.builtin.assert:
+    that: prometheus_port_owner.stdout_lines | reject('search', 'prometheus') | list | length == 0
+    fail_msg: "{{ prometheus_port_owner.stdout_lines }}"
+    success_msg: "{{ prometheus_installed.stdout_lines | first }}"
+
+- name: Create the Prometheus Lab 5 directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: prometheus
+    mode: "0750"
+  loop:
+    - { path: "{{ prometheus_lab5_dir }}", owner: root }
+    - { path: "{{ prometheus_lab5_data }}", owner: prometheus }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Store the read-only Qdrant key for scraping
+  ansible.builtin.copy:
+    dest: "{{ prometheus_lab5_dir }}/qdrant.key"
+    content: "{{ qdrant_read_key }}"
+    owner: root
+    group: prometheus
+    mode: "0640"
+  no_log: true
+  notify: Restart Prometheus Lab 5
+
+- name: Write the scrape configuration and the rules
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "{{ prometheus_lab5_dir }}/{{ item }}"
+    owner: root
+    group: prometheus
+    mode: "0640"
+  loop: [prometheus.yml, rules.yml]
+  notify: Restart Prometheus Lab 5
+
+- name: Validate the configuration and the rules
+  ansible.builtin.command:
+    argv: [/usr/local/bin/promtool, check, config, "{{ prometheus_lab5_dir }}/prometheus.yml"]
+  register: prometheus_check
+  changed_when: false
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: prometheus-lab5.service.j2
+    dest: /etc/systemd/system/prometheus-lab5.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Prometheus Lab 5
+
+- name: Enable and start Prometheus Lab 5
+  ansible.builtin.systemd_service:
+    name: prometheus-lab5
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply Prometheus changes now
+  ansible.builtin.meta: flush_handlers
