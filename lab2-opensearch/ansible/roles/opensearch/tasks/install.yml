@@ -1,0 +1,70 @@
+---
+- name: Download OpenSearch {{ opensearch_version }} archive (checked against the official SHA-512)
+  ansible.builtin.get_url:
+    url: "{{ opensearch_download_url }}"
+    dest: "{{ opensearch_download_dir }}/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    checksum: "sha512:{{ opensearch_download_url }}.sha512"
+    mode: "0644"
+    timeout: 120
+
+- name: Unpack OpenSearch
+  ansible.builtin.unarchive:
+    src: "{{ opensearch_download_dir }}/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+    dest: /opt
+    remote_src: true
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    creates: "{{ opensearch_install_dir }}/bin/opensearch"
+
+- name: Point {{ opensearch_home }} at the installed version
+  ansible.builtin.file:
+    src: "{{ opensearch_install_dir }}"
+    dest: "{{ opensearch_home }}"
+    state: link
+
+- name: Remove plugins that are not used in this lab
+  ansible.builtin.command:
+    argv:
+      - "{{ opensearch_home }}/bin/opensearch-plugin"
+      - remove
+      - "{{ item }}"
+    removes: "{{ opensearch_home }}/plugins/{{ item }}"
+  loop: "{{ opensearch_plugins_remove }}"
+
+- name: Install additional plugins
+  ansible.builtin.command:
+    argv:
+      - "{{ opensearch_home }}/bin/opensearch-plugin"
+      - install
+      - --batch
+      - "{{ item.url }}"
+    creates: "{{ opensearch_home }}/plugins/{{ item.name }}"
+  loop: "{{ opensearch_plugins_install }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Give the installed plugin files to the OpenSearch user
+  ansible.builtin.file:
+    path: "{{ opensearch_home }}/plugins/{{ item.name }}"
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    recurse: true
+  loop: "{{ opensearch_plugins_install }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: List installed plugins
+  ansible.builtin.command:
+    argv:
+      - "{{ opensearch_home }}/bin/opensearch-plugin"
+      - list
+  register: opensearch_plugin_list
+  changed_when: false
+
+- name: Verify required plugins are present
+  ansible.builtin.assert:
+    that:
+      - "'opensearch-security' in opensearch_plugin_list.stdout_lines"
+      - "'opensearch-index-management' in opensearch_plugin_list.stdout_lines"
+      - "'prometheus-exporter' in opensearch_plugin_list.stdout_lines"
+    success_msg: "PLUGINS VERIFIED: security, index-management, prometheus-exporter"

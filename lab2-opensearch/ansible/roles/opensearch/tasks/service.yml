@@ -1,0 +1,55 @@
+---
+- name: Install systemd template unit opensearch@.service
+  ansible.builtin.template:
+    src: opensearch@.service.j2
+    dest: /etc/systemd/system/opensearch@.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: opensearch_unit_result
+
+- name: Reload systemd after unit change
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: opensearch_unit_result is changed
+
+- name: Enable autostart and start every node
+  ansible.builtin.systemd_service:
+    name: "opensearch@{{ item.name }}"
+    enabled: true
+    state: started
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "opensearch@{{ item.name }}"
+
+- name: Wait for the HTTPS port of every node
+  ansible.builtin.wait_for:
+    host: "{{ opensearch_api_host }}"
+    port: "{{ item.http_port }}"
+    state: started
+    timeout: "{{ opensearch_start_timeout_seconds }}"
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    label: "{{ item.name }}:{{ item.http_port }}"
+
+- name: Rolling restart of nodes whose configuration changed
+  ansible.builtin.include_tasks: rolling_restart.yml
+  loop: "{{ opensearch_nodes }}"
+  loop_control:
+    loop_var: opensearch_node
+    label: "{{ opensearch_node.name }}"
+  when: opensearch_restart_needed | default(false) | bool
+
+- name: Wait until the security index is initialised and the cluster is green
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_cluster/health?wait_for_status=green&timeout=30s"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+    status_code: 200
+  register: opensearch_health_wait
+  until: (opensearch_health_wait.json | default({})).status | default('') == 'green'
+  retries: 30
+  delay: 10

@@ -1,0 +1,50 @@
+# Managed by Ansible (lab2): nginx JSON access log -> OpenSearch data stream {{ logs_data_stream }}
+
+[SERVICE]
+    Flush             1
+    Log_Level         info
+    Parsers_File      {{ fluentbit_conf_dir }}/parsers-lab2.conf
+    HTTP_Server       On
+    HTTP_Listen       127.0.0.1
+    HTTP_Port         {{ fluentbit_http_port }}
+    Health_Check      On
+    storage.path      {{ fluentbit_state_dir }}/storage
+    storage.sync      normal
+
+[INPUT]
+    Name              tail
+    Tag               nginx.access
+    Path              {{ nginx_access_log }}
+    Parser            lab2_nginx_json
+    # Remembers the read offset, so a restart does not resend old lines
+    DB                {{ fluentbit_state_dir }}/nginx-tail.db
+    Read_from_Head    On
+    Refresh_Interval  5
+    Mem_Buf_Limit     20MB
+    storage.type      filesystem
+
+[FILTER]
+    Name              record_modifier
+    Match             nginx.*
+    Record            host {{ ansible_hostname }}
+    Record            log_source nginx
+
+[OUTPUT]
+    Name               opensearch
+    Match              nginx.*
+    Host               {{ opensearch_api_host }}
+    Port               {{ opensearch_api_port }}
+    Index              {{ logs_data_stream }}
+    # Data streams accept only op_type=create (this is also the default)
+    Write_Operation    create
+    Suppress_Type_Name On
+    Time_Key           @timestamp
+    Time_Key_Nanos     Off
+    HTTP_User          {{ logs_writer_user }}
+    HTTP_Passwd        ${LAB2_WRITER_PASSWORD}
+    tls                On
+    tls.verify         On
+    tls.ca_file        {{ fluentbit_conf_dir }}/certs/root-ca.pem
+    Buffer_Size        512KB
+    Trace_Error        On
+    Retry_Limit        10

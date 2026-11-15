@@ -1,0 +1,27 @@
+---
+opensearch_download_url: "https://artifacts.opensearch.org/releases/bundle/opensearch/{{ opensearch_version }}/opensearch-{{ opensearch_version }}-linux-x64.tar.gz"
+opensearch_download_dir: "/opt/src"
+opensearch_install_dir: "/opt/opensearch-{{ opensearch_version }}"
+
+# JVM heap per node. Three nodes x 1g fits a VM with 8 GB RAM.
+# On a 6 GB VM use "512m".
+opensearch_heap_size: "1g"
+
+# Plugins that are removed from the bundle.
+# Performance Analyzer writes to shared /dev/shm paths and is not used here;
+# with three nodes on one host it only adds noise.
+opensearch_plugins_remove:
+  - opensearch-performance-analyzer
+
+# Plugins installed on top of the bundle (part 4 needs the Prometheus exporter).
+# The exporter must match the OpenSearch version exactly: 3.8.0 -> 3.8.0.0.
+opensearch_plugins_install:
+  - name: prometheus-exporter
+    url: "https://github.com/opensearch-project/opensearch-prometheus-exporter/releases/download/{{ opensearch_version }}.0/prometheus-exporter-{{ opensearch_version }}.0.zip"
+
+opensearch_cert_days: 730
+
+opensearch_vm_max_map_count: 262144
+
+# How long to wait for the cluster to become green after start.
+opensearch_start_timeout_seconds: 300

@@ -1,0 +1,46 @@
+{
+  "index_patterns": ["{{ logs_data_stream }}*"],
+  "data_stream": {
+    "timestamp_field": { "name": "@timestamp" }
+  },
+  "priority": 200,
+  "template": {
+    "settings": {
+      "index.number_of_shards": {{ logs_primary_shards }},
+      "index.number_of_replicas": {{ logs_replicas }},
+      "index.refresh_interval": "5s",
+      "index.codec": "best_compression",
+      "index.routing.allocation.require.temp": "hot"
+    },
+    "mappings": {
+      "dynamic": true,
+      "properties": {
+        "@timestamp":      { "type": "date" },
+        "time":            { "type": "date" },
+        "remote_addr":     { "type": "ip" },
+        "request_method":  { "type": "keyword" },
+        "request_uri":     { "type": "keyword", "ignore_above": 2048 },
+        "server_protocol": { "type": "keyword" },
+        "status":          { "type": "short" },
+        "body_bytes_sent": { "type": "long" },
+        "request_time":    { "type": "float" },
+        "http_referer":    { "type": "keyword", "ignore_above": 2048 },
+        "http_user_agent": {
+          "type": "text",
+          "fields": { "keyword": { "type": "keyword", "ignore_above": 512 } }
+        },
+        "server_name":     { "type": "keyword" },
+        "request_id":      { "type": "keyword" },
+        "host":            { "type": "keyword" },
+        "log_source":      { "type": "keyword" },
+        "message":         { "type": "text" },
+        "source":          { "type": "keyword" },
+        "checked_user":    { "type": "keyword" }
+      }
+    }
+  },
+  "_meta": {
+    "description": "nginx JSON access logs, NBD lab 2",
+    "managed_by": "ansible"
+  }
+}

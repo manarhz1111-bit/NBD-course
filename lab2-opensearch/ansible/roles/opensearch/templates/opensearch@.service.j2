@@ -1,0 +1,36 @@
+[Unit]
+Description=OpenSearch {{ opensearch_version }} node %i (NBD Lab 2)
+Documentation=https://docs.opensearch.org/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ opensearch_user }}
+Group={{ opensearch_group }}
+
+Environment=OPENSEARCH_HOME={{ opensearch_home }}
+Environment=OPENSEARCH_PATH_CONF={{ opensearch_conf_root }}/%i
+Environment=OPENSEARCH_JAVA_HOME={{ opensearch_home }}/jdk
+RuntimeDirectory=opensearch-%i
+
+ExecStart={{ opensearch_home }}/bin/opensearch -p /run/opensearch-%i/opensearch.pid --quiet
+
+LimitNOFILE=65535
+LimitNPROC=4096
+LimitAS=infinity
+LimitFSIZE=infinity
+
+# Give the JVM time to stop cleanly; 143 = SIGTERM exit code of the JVM
+TimeoutStartSec=180
+TimeoutStopSec=120
+KillSignal=SIGTERM
+KillMode=process
+SendSIGKILL=no
+SuccessExitStatus=143
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

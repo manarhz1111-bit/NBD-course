@@ -1,0 +1,66 @@
+---
+# ansible-playbook lab2.yml --tags part3_load [-e load_requests=60000]
+# Writes enough log lines to make the write index grow past 1 MB,
+# and runs searches as the reader user so the search graphs move too.
+
+- name: Remember when the load started
+  ansible.builtin.set_fact:
+    load_started_at: "{{ now(utc=false, fmt='%H:%M:%S') }}"
+
+- name: Send {{ load_requests }} successful requests to nginx
+  ansible.builtin.command:
+    argv:
+      - ab
+      - -q
+      - -n
+      - "{{ load_requests }}"
+      - -c
+      - "{{ load_concurrency }}"
+      - "http://127.0.0.1:{{ nginx_site_port }}/?source=ab-load"
+  register: load_ab_ok
+  changed_when: true
+
+- name: Send {{ load_not_found_requests }} requests to a missing page (404)
+  ansible.builtin.command:
+    argv:
+      - ab
+      - -q
+      - -n
+      - "{{ load_not_found_requests }}"
+      - -c
+      - "{{ load_concurrency }}"
+      - "http://127.0.0.1:{{ nginx_site_port }}/missing?source=ab-load"
+  register: load_ab_404
+  changed_when: true
+
+- name: Run searches as {{ logs_reader_user }}
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/{{ logs_data_stream }}/_search"
+    method: POST
+    user: "{{ logs_reader_user }}"
+    password: "{{ vault_logs_reader_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    timeout: 90
+    body_format: json
+    body:
+      size: 0
+      query: { term: { status: "{{ (item is even) | ternary(404, 200) }}" } }
+      aggs:
+        per_minute: { date_histogram: { field: "@timestamp", fixed_interval: "1m" } }
+  loop: "{{ range(0, 100) | list }}"
+  loop_control:
+    label: "search {{ item }}"
+  register: load_search_result
+  until: load_search_result.status | default(0) == 200
+  retries: 3
+  delay: 5
+  no_log: true
+
+- name: Report load result
+  ansible.builtin.debug:
+    msg:
+      - "Load started at {{ load_started_at }}, finished at {{ now(utc=false, fmt='%H:%M:%S') }}"
+      - "200 requests: {{ load_ab_ok.stdout_lines | select('search', 'Requests per second|Failed requests|Complete requests') | join(' | ') }}"
+      - "404 requests: {{ load_ab_404.stdout_lines | select('search', 'Requests per second|Complete requests') | join(' | ') }}"
+      - "Now run: ansible-playbook lab2.yml --tags part3_status (a few times, 1 minute apart)"

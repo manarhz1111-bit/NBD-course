@@ -1,0 +1,128 @@
+---
+- name: Create Prometheus system group
+  ansible.builtin.group:
+    name: prometheus
+    system: true
+
+- name: Create Prometheus system user
+  ansible.builtin.user:
+    name: prometheus
+    group: prometheus
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Download Prometheus {{ prometheus_version }}
+  ansible.builtin.get_url:
+    url: "https://github.com/prometheus/prometheus/releases/download/v{{ prometheus_version }}/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    checksum: "sha256:{{ prometheus_sha256 }}"
+    mode: "0644"
+
+- name: Unpack Prometheus
+  ansible.builtin.unarchive:
+    src: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64.tar.gz"
+    dest: /opt/src
+    remote_src: true
+    creates: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64/prometheus"
+
+- name: Install prometheus and promtool binaries
+  ansible.builtin.copy:
+    src: "/opt/src/prometheus-{{ prometheus_version }}.linux-amd64/{{ item }}"
+    dest: "/usr/local/bin/{{ item }}"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - prometheus
+    - promtool
+  notify: Restart Prometheus
+
+- name: Create Prometheus directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: prometheus
+    mode: "0750"
+  loop:
+    - { path: /etc/prometheus, owner: root }
+    - { path: /etc/prometheus/certs, owner: root }
+    - { path: /var/lib/prometheus, owner: prometheus }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Install the lab CA for scraping over HTTPS
+  ansible.builtin.copy:
+    src: "{{ opensearch_ca_cert }}"
+    dest: /etc/prometheus/certs/root-ca.pem
+    remote_src: true
+    owner: root
+    group: prometheus
+    mode: "0640"
+  notify: Restart Prometheus
+
+- name: Store the monitoring user password in a file readable only by Prometheus
+  ansible.builtin.copy:
+    dest: /etc/prometheus/opensearch_monitor.pass
+    content: "{{ vault_monitor_password }}"
+    owner: root
+    group: prometheus
+    mode: "0640"
+  no_log: true
+  notify: Restart Prometheus
+
+- name: Deploy Prometheus configuration
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: /etc/prometheus/prometheus.yml
+    owner: root
+    group: prometheus
+    mode: "0640"
+  notify: Restart Prometheus
+
+- name: Validate Prometheus configuration
+  ansible.builtin.command:
+    argv: [/usr/local/bin/promtool, check, config, /etc/prometheus/prometheus.yml]
+  changed_when: false
+
+- name: Deploy Prometheus systemd unit
+  ansible.builtin.template:
+    src: prometheus.service.j2
+    dest: /etc/systemd/system/prometheus.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart Prometheus
+
+- name: Enable and start Prometheus
+  ansible.builtin.systemd_service:
+    name: prometheus
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply Prometheus handlers now
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait until all OpenSearch targets are UP
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ prometheus_port }}/api/v1/targets?state=active"
+    return_content: true
+  register: prometheus_targets
+  until: >-
+    (prometheus_targets.json.data.activeTargets | default([])
+     | selectattr('labels.job', 'eq', 'opensearch')
+     | selectattr('health', 'eq', 'up') | list | length) == (opensearch_nodes | length)
+  retries: 20
+  delay: 5
+
+- name: Report OpenSearch targets
+  ansible.builtin.debug:
+    msg: >-
+      {{ prometheus_targets.json.data.activeTargets
+         | selectattr('labels.job', 'eq', 'opensearch')
+         | map(attribute='scrapeUrl')
+         | zip(prometheus_targets.json.data.activeTargets | selectattr('labels.job', 'eq', 'opensearch') | map(attribute='health'))
+         | map('join', ' -> ') | list }}

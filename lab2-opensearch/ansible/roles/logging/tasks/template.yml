@@ -1,0 +1,56 @@
+---
+- name: Create or update index template for nginx logs
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_index_template/{{ logs_index_template_name }}"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body: "{{ lookup('ansible.builtin.template', 'index-template.json.j2') | from_json }}"
+  changed_when: false
+
+- name: Check whether the data stream exists
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_data_stream/{{ logs_data_stream }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    status_code: [200, 404]
+  register: logs_ds_exists
+
+# Created by the admin up front, so the writer role does not need the right to create indices.
+- name: Create the data stream
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_data_stream/{{ logs_data_stream }}"
+    method: PUT
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+  when: logs_ds_exists.status == 404
+  changed_when: true
+
+- name: Read the data stream back
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/_data_stream/{{ logs_data_stream }}"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: logs_ds
+
+- name: Verify data stream and template
+  ansible.builtin.assert:
+    that:
+      - logs_ds.json.data_streams[0].name == logs_data_stream
+      - logs_ds.json.data_streams[0].template == logs_index_template_name
+      - logs_ds.json.data_streams[0].timestamp_field.name == '@timestamp'
+    success_msg: >-
+      DATA STREAM VERIFIED: {{ logs_data_stream }} uses template {{ logs_index_template_name }},
+      generation {{ logs_ds.json.data_streams[0].generation }},
+      status {{ logs_ds.json.data_streams[0].status }},
+      write index {{ (logs_ds.json.data_streams[0].indices | last).index_name }}

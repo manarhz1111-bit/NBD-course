@@ -1,0 +1,18 @@
+# Managed by Ansible (lab2). One JSON object per request.
+# escape=json makes nginx escape quotes and control characters in variables.
+log_format lab2_json escape=json
+  '{'
+    '"@timestamp":"$time_iso8601",'
+    '"time":"$time_iso8601",'
+    '"remote_addr":"$remote_addr",'
+    '"request_method":"$request_method",'
+    '"request_uri":"$request_uri",'
+    '"server_protocol":"$server_protocol",'
+    '"status":$status,'
+    '"body_bytes_sent":$body_bytes_sent,'
+    '"request_time":$request_time,'
+    '"http_referer":"$http_referer",'
+    '"http_user_agent":"$http_user_agent",'
+    '"server_name":"$server_name",'
+    '"request_id":"$request_id"'
+  '}';

@@ -1,0 +1,21 @@
+---
+- name: NBD Laboratory 2 - OpenSearch 3.8 operation
+  hosts: opensearch
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: opensearch     # part 1: hot-warm cluster, TLS, autostart
+    - role: dashboards     # part 1: OpenSearch Dashboards over HTTPS
+    - role: security       # part 2: roles and users
+    - role: logging        # part 3: nginx -> Fluent Bit -> data stream + ISM
+    - role: monitoring     # part 4: Prometheus exporter plugin, Prometheus, Grafana
+
+  tasks:
+    # Needs the data stream from part 3, so it runs after all roles.
+    - name: Check what each lab user may and may not do
+      ansible.builtin.import_role:
+        name: security
+        tasks_from: access_check.yml
+      tags:
+        - part2_access

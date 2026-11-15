@@ -1,0 +1,78 @@
+---
+# Part 2: role model. Roles and users are data; the tasks only loop over them.
+
+security_roles:
+  # 2.1a Write only into the data stream "logs-nginx".
+  # A permission on a data stream name also covers its backing indices
+  # (.ds-logs-nginx-000001, ...), so no ".ds-*" pattern is needed.
+  - name: "lab2_logs_writer"
+    description: "Write documents into the {{ logs_data_stream }} data stream only"
+    cluster_permissions:
+      - "indices:data/write/bulk"
+    index_permissions:
+      - index_patterns: ["{{ logs_data_stream }}"]
+        allowed_actions:
+          - "indices:data/write/index"
+          - "indices:data/write/bulk*"
+          - "indices:admin/mapping/put"
+          - "indices:admin/mapping/auto_put"
+
+  # 2.1b Read-only access to logs* indices.
+  - name: "lab2_logs_reader"
+    description: "Read-only access to logs* indices"
+    cluster_permissions:
+      - "cluster_composite_ops_ro"
+    index_permissions:
+      - index_patterns: ["logs*"]
+        allowed_actions:
+          - "read"
+          - "indices:admin/get"
+
+  # 2.1c Minimum needed to read cluster and node metrics (also via /_prometheus/metrics).
+  - name: "lab2_monitoring"
+    description: "Read cluster and node metrics, nothing else"
+    cluster_permissions:
+      - "cluster:monitor/health"
+      - "cluster:monitor/state"
+      - "cluster:monitor/stats"
+      - "cluster:monitor/nodes/info"
+      - "cluster:monitor/nodes/stats"
+      - "cluster:monitor/prometheus/metrics"
+    index_permissions:
+      - index_patterns:
+          - "logs*"
+          - ".ds-{{ logs_data_stream }}-*"
+        allowed_actions:
+          - "indices:monitor/stats"
+
+# 2.2 Three users, one role each.
+security_users:
+  - name: "{{ logs_writer_user }}"
+    password: "{{ vault_logs_writer_password }}"
+    role: "lab2_logs_writer"
+    description: "Fluent Bit shipper"
+  - name: "{{ logs_reader_user }}"
+    password: "{{ vault_logs_reader_password }}"
+    role: "lab2_logs_reader"
+    description: "Analyst who reads logs"
+  - name: "{{ monitor_user }}"
+    password: "{{ vault_monitor_password }}"
+    role: "lab2_monitoring"
+    description: "Prometheus scraper"
+
+# Re-send passwords of existing users (normally only missing users are created).
+security_reset_passwords: false
+
+# Allowed / denied matrix checked after part 3 created the data stream.
+security_access_checks:
+  - { user: "{{ logs_writer_user }}", method: POST, path: "/{{ logs_data_stream }}/_doc", body: true, expect: 201, what: "write into {{ logs_data_stream }}" }
+  - { user: "{{ logs_writer_user }}", method: POST, path: "/lab2-not-logs/_doc", body: true, expect: 403, what: "write into another index" }
+  - { user: "{{ logs_writer_user }}", method: GET, path: "/{{ logs_data_stream }}/_search", body: false, expect: 403, what: "read logs" }
+  - { user: "{{ logs_reader_user }}", method: GET, path: "/logs*/_search?size=1", body: false, expect: 200, what: "read logs*" }
+  - { user: "{{ logs_reader_user }}", method: POST, path: "/{{ logs_data_stream }}/_doc", body: true, expect: 403, what: "write into {{ logs_data_stream }}" }
+  - { user: "{{ logs_reader_user }}", method: GET, path: "/_cluster/health", body: false, expect: 403, what: "cluster health" }
+  - { user: "{{ monitor_user }}", method: GET, path: "/_cluster/health", body: false, expect: 200, what: "cluster health" }
+  - { user: "{{ monitor_user }}", method: GET, path: "/_nodes/stats/jvm,os", body: false, expect: 200, what: "node stats" }
+  - { user: "{{ monitor_user }}", method: GET, path: "/_prometheus/metrics", body: false, expect: 200, what: "Prometheus metrics" }
+  - { user: "{{ monitor_user }}", method: GET, path: "/{{ logs_data_stream }}/_search", body: false, expect: 403, what: "read logs" }
+  - { user: "{{ monitor_user }}", method: POST, path: "/{{ logs_data_stream }}/_doc", body: true, expect: 403, what: "write into {{ logs_data_stream }}" }

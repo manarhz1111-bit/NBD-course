@@ -1,0 +1,73 @@
+---
+- name: Install packages needed by the playbook
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - openssl
+      - tar
+      - unzip
+      - python3-cryptography
+      - python3-debian
+    state: present
+    update_cache: true
+
+- name: Raise vm.max_map_count for Lucene memory-mapped files
+  ansible.posix.sysctl:
+    name: vm.max_map_count
+    value: "{{ opensearch_vm_max_map_count }}"
+    sysctl_file: /etc/sysctl.d/90-opensearch.conf
+    state: present
+    reload: true
+
+- name: Create OpenSearch system group
+  ansible.builtin.group:
+    name: "{{ opensearch_group }}"
+    system: true
+    state: present
+
+- name: Create OpenSearch system user
+  ansible.builtin.user:
+    name: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ opensearch_data_root }}"
+    create_home: false
+    state: present
+
+- name: Create base directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ opensearch_group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ opensearch_download_dir }}", owner: root, mode: "0755" }
+    - { path: "{{ opensearch_conf_root }}", owner: root, mode: "0755" }
+    - { path: "{{ opensearch_data_root }}", owner: "{{ opensearch_user }}", mode: "0750" }
+    - { path: "{{ opensearch_log_root }}", owner: "{{ opensearch_user }}", mode: "0750" }
+    - { path: "{{ opensearch_pki_dir }}", owner: root, mode: "0750" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Create per-node data and log directories
+  ansible.builtin.file:
+    path: "{{ item.0 }}/{{ item.1.name }}"
+    state: directory
+    owner: "{{ opensearch_user }}"
+    group: "{{ opensearch_group }}"
+    mode: "0750"
+  loop: "{{ [opensearch_data_root, opensearch_log_root] | product(opensearch_nodes) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/{{ item.1.name }}"
+
+- name: Check available memory
+  ansible.builtin.assert:
+    that:
+      - ansible_memtotal_mb >= 5500
+    fail_msg: >-
+      The VM has {{ ansible_memtotal_mb }} MB RAM. Three nodes + Dashboards need about 6 GB;
+      give the VM 8 GB or set opensearch_heap_size to 512m.
+    success_msg: "Memory OK: {{ ansible_memtotal_mb }} MB"

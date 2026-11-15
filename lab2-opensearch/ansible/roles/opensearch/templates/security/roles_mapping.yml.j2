@@ -1,0 +1,16 @@
+---
+# Managed by Ansible (lab2). Initial mappings only; part 2 adds the lab roles via the REST API.
+_meta:
+  type: "rolesmapping"
+  config_version: 2
+
+all_access:
+  reserved: false
+  users:
+    - "{{ opensearch_admin_user }}"
+  description: "Cluster administrator"
+
+kibana_server:
+  reserved: true
+  users:
+    - "kibanaserver"

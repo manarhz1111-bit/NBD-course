@@ -1,0 +1,54 @@
+---
+- name: Generate a few marked requests to nginx
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ nginx_site_port }}/{{ item }}"
+    status_code: [200, 404]
+  loop:
+    - "?probe=ansible-verify"
+    - "missing-page?probe=ansible-verify"
+    - "?probe=ansible-verify&n=3"
+
+- name: Wait until the marked requests are searchable in OpenSearch
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/{{ logs_data_stream }}/_search"
+    method: POST
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    body_format: json
+    body:
+      size: 1
+      sort: [{ "@timestamp": "desc" }]
+      track_total_hits: true
+      query:
+        wildcard:
+          request_uri: "*probe=ansible-verify*"
+    return_content: true
+  register: logs_probe
+  until: logs_probe.json.hits.total.value | default(0) >= 3
+  retries: 20
+  delay: 3
+
+- name: Count all documents in the data stream
+  ansible.builtin.uri:
+    url: "{{ opensearch_api_url }}/{{ logs_data_stream }}/_count"
+    user: "{{ opensearch_admin_user }}"
+    password: "{{ vault_opensearch_admin_password }}"
+    force_basic_auth: true
+    ca_path: "{{ opensearch_ca_cert }}"
+    return_content: true
+  register: logs_count
+
+- name: Verify the document mapping came from the template
+  ansible.builtin.assert:
+    that:
+      - logs_probe.json.hits.hits[0]._index is match('^\.ds-' ~ logs_data_stream ~ '-\d+$')
+      - logs_probe.json.hits.hits[0]._source.status in [200, 404]
+      - logs_probe.json.hits.hits[0]._source['@timestamp'] is defined
+      - logs_probe.json.hits.hits[0]._source.host == ansible_hostname
+    success_msg:
+      - "PIPELINE VERIFIED: nginx -> Fluent Bit -> {{ logs_data_stream }}"
+      - "Latest probe document in {{ logs_probe.json.hits.hits[0]._index }}:"
+      - "{{ logs_probe.json.hits.hits[0]._source | to_json }}"
+      - "Documents in {{ logs_data_stream }}: {{ logs_count.json.count }}"

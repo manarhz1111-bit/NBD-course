@@ -1,0 +1,18 @@
+---
+- name: Create or update the lab roles
+  ansible.builtin.import_tasks: roles.yml
+  tags:
+    - part2
+    - part2_roles
+
+- name: Create users and map them to roles
+  ansible.builtin.import_tasks: users.yml
+  tags:
+    - part2
+    - part2_users
+
+- name: Read roles, users and mappings back
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - part2
+    - part2_verify
