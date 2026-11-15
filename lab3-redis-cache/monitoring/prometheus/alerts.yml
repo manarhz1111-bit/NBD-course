@@ -1,0 +1,55 @@
+groups:
+  - name: lab3-cache
+    rules:
+      - alert: RedisDown
+        expr: (redis_up{job="redis"} == 0) or absent(redis_up{job="redis"})
+        for: 30s
+        labels: { severity: critical }
+        annotations:
+          summary: "Redis is down - the API serves everything from PostgreSQL"
+
+      - alert: CacheCircuitBreakerOpen
+        expr: max(app_cache_breaker_open) == 1
+        for: 30s
+        labels: { severity: warning }
+        annotations:
+          summary: "API stopped using Redis after errors (fail-open mode)"
+
+      - alert: CacheHitRatioLow
+        expr: |
+          sum(rate(app_cache_requests_total{result=~"hit|negative_hit|wait_hit"}[5m]))
+            / sum(rate(app_cache_requests_total{result!="bypass"}[5m])) < 0.7
+          and sum(rate(app_cache_requests_total{result!="bypass"}[5m])) > 5
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Cache hit ratio {{ $value | humanizePercentage }} is below 70%"
+
+      - alert: RedisMemoryNearLimit
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "Redis uses {{ $value | humanizePercentage }} of maxmemory - evictions follow"
+
+      - alert: RedisEvictingKeys
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 5m
+        labels: { severity: info }
+        annotations:
+          summary: "Redis evicts {{ $value | humanize }} keys/s - maxmemory may be too small"
+
+      - alert: ApiLatencyHigh
+        expr: |
+          histogram_quantile(0.95, sum by (le) (rate(app_http_request_duration_seconds_bucket[1m]))) > 0.25
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "API p95 latency is {{ $value | humanizeDuration }}"
+
+      - alert: DbPoolSaturated
+        expr: max(app_db_pool_requests_waiting) > 5
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $value }} requests are waiting for a PostgreSQL connection"

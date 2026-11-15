@@ -1,0 +1,9 @@
+.env
+load/results/*
+!load/results/.gitkeep
+__pycache__/
+*.pyc
+.venv/
+.idea/
+.vscode/
+.DS_Store

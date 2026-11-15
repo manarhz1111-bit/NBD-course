@@ -1,0 +1,1905 @@
+{
+  "uid": "nbd-lab3-redis-cache",
+  "title": "Redis cache-aside - Lab 3",
+  "tags": [
+    "redis",
+    "cache",
+    "nbd",
+    "lab3"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 41,
+  "version": 1,
+  "refresh": "5s",
+  "editable": false,
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Overview",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "API requests/s",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum(rate(app_http_requests_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "API p95 latency",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 4,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(app_http_request_duration_seconds_bucket[1m])))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.1
+              },
+              {
+                "color": "red",
+                "value": 0.25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Cache hit ratio (app)",
+      "description": "hit + negative_hit + wait_hit out of all lookups that used the cache",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum(rate(app_cache_requests_total{result=~\"hit|negative_hit|wait_hit\"}[1m])) / sum(rate(app_cache_requests_total{result!=\"bypass\"}[1m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Keyspace hit ratio (Redis)",
+      "description": "Counted by Redis itself: GET on a missing key is a miss",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_keyspace_hits_total[1m]) / (rate(redis_keyspace_hits_total[1m]) + rate(redis_keyspace_misses_total[1m]))",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Redis memory / maxmemory",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "redis_memory_used_bytes / redis_memory_max_bytes",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.8
+              },
+              {
+                "color": "red",
+                "value": 0.9
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Redis / breaker",
+      "description": "UP = Redis up and used; DEGRADED = API skips Redis (breaker open) or Redis is down without traffic; DOWN = exporter cannot reach Redis",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 1,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "min(redis_up) - max(app_cache_breaker_open)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "DEGRADED",
+                  "color": "orange"
+                },
+                "-1": {
+                  "text": "DOWN",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "values": false,
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": ""
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center"
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "API",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 5,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Requests/s by route",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (route) (rate(app_http_requests_total[1m]))",
+          "legendFormat": "{{route}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "p95 latency of reads by cache result",
+      "description": "hit vs miss vs bypass (no cache): the main result of the lab",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 6,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, cache) (rate(app_http_request_duration_seconds_bucket{method=\"GET\",route=~\"/books/\\\\{book_id\\\\}|/genres/\\\\{genre\\\\}/top\"}[1m])))",
+          "legendFormat": "{{cache}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Cache lookups by result",
+      "description": "wait_hit = waited for another request that was loading the same key (stampede protection)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (result) (rate(app_cache_requests_total[1m]))",
+          "legendFormat": "{{result}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "API latency percentiles (all routes)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 14,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(app_http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "p50",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(app_http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "p95",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(app_http_request_duration_seconds_bucket[1m])))",
+          "legendFormat": "p99",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 13,
+      "type": "timeseries",
+      "title": "PostgreSQL connection pool",
+      "description": "Without the cache the 10 connections are the bottleneck: requests start to queue",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "max(app_db_pool_size)",
+          "legendFormat": "open",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "max(app_db_pool_available)",
+          "legendFormat": "idle",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "max(app_db_pool_requests_waiting)",
+          "legendFormat": "requests waiting",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 14,
+      "type": "timeseries",
+      "title": "PostgreSQL queries/s from the API",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 22,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (query) (rate(app_db_query_duration_seconds_count[1m]))",
+          "legendFormat": "{{query}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 15,
+      "type": "timeseries",
+      "title": "Errors and invalidations",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 22,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (status) (rate(app_http_requests_total{status=~\"5..\"}[1m]))",
+          "legendFormat": "HTTP {{status}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (op) (rate(app_cache_errors_total[1m]))",
+          "legendFormat": "redis error: {{op}}",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum(rate(app_cache_invalidations_total[1m]))",
+          "legendFormat": "keys invalidated",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 16,
+      "type": "row",
+      "title": "Redis",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 30,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 17,
+      "type": "timeseries",
+      "title": "Commands/s",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_commands_processed_total[1m])",
+          "legendFormat": "all",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (cmd) (rate(redis_commands_total{cmd=~\"get|set|del|evalsha\"}[1m]))",
+          "legendFormat": "{{cmd}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 18,
+      "type": "timeseries",
+      "title": "Keyspace hits / misses",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 31,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_keyspace_hits_total[1m])",
+          "legendFormat": "hits",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_keyspace_misses_total[1m])",
+          "legendFormat": "misses",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 19,
+      "type": "timeseries",
+      "title": "Average command latency (server side)",
+      "description": "Time inside Redis only; the network round trip is not included",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 31,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (cmd) (rate(redis_commands_duration_seconds_total{cmd=~\"get|set|del|evalsha\"}[1m])) / sum by (cmd) (rate(redis_commands_total{cmd=~\"get|set|del|evalsha\"}[1m]))",
+          "legendFormat": "{{cmd}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 20,
+      "type": "timeseries",
+      "title": "Memory",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 39,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "redis_memory_used_bytes",
+          "legendFormat": "used",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "redis_memory_max_bytes",
+          "legendFormat": "maxmemory",
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (key_group) (redis_key_group_memory_usage_bytes)",
+          "legendFormat": "keys: {{key_group}}",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 21,
+      "type": "timeseries",
+      "title": "Keys by group",
+      "description": "book/top/genres = cached values, lock = rebuilds in progress",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 39,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (key_group) (redis_key_group_count)",
+          "legendFormat": "{{key_group}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum(redis_db_keys_expiring)",
+          "legendFormat": "with TTL",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 22,
+      "type": "timeseries",
+      "title": "Expired / evicted keys per second",
+      "description": "Evictions mean maxmemory is too small for the working set",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 39,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_expired_keys_total[1m])",
+          "legendFormat": "expired (TTL)",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_evicted_keys_total[1m])",
+          "legendFormat": "evicted (maxmemory)",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 23,
+      "type": "timeseries",
+      "title": "Clients",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 47,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "redis_connected_clients",
+          "legendFormat": "connected",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "redis_blocked_clients",
+          "legendFormat": "blocked",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 24,
+      "type": "timeseries",
+      "title": "Network",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 47,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_net_input_bytes_total[1m])",
+          "legendFormat": "in",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(redis_net_output_bytes_total[1m])",
+          "legendFormat": "out",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 25,
+      "type": "timeseries",
+      "title": "Memory fragmentation ratio",
+      "description": "> 1.5 means a lot of wasted RAM",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 47,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "redis_mem_fragmentation_ratio",
+          "legendFormat": "ratio",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "title": "PostgreSQL",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 55,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "Transactions/s",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 56,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(pg_stat_database_xact_commit{datname=\"library\"}[1m])",
+          "legendFormat": "commit",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(pg_stat_database_xact_rollback{datname=\"library\"}[1m])",
+          "legendFormat": "rollback",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 28,
+      "type": "timeseries",
+      "title": "Rows fetched/s",
+      "description": "Drops sharply when the cache absorbs the reads",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 56,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "rate(pg_stat_database_tup_fetched{datname=\"library\"}[1m])",
+          "legendFormat": "fetched",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 29,
+      "type": "timeseries",
+      "title": "Connections by state",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 56,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (state) (pg_stat_activity_count{datname=\"library\"})",
+          "legendFormat": "{{state}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 30,
+      "type": "row",
+      "title": "k6 load test",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 64,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "id": 31,
+      "type": "timeseries",
+      "title": "k6 request rate by scenario",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 65,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum by (scenario) (rate(k6_http_reqs_total[30s]))",
+          "legendFormat": "{{scenario}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 32,
+      "type": "timeseries",
+      "title": "k6 max request-group p95 / p99",
+      "description": "Maximum percentile across request groups within each scenario. This is not the overall scenario percentile. Use the k6 terminal summary for overall scenario results.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 65,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "max by (scenario) (k6_http_req_duration_p95)",
+          "legendFormat": "{{scenario}} max group p95",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "max by (scenario) (k6_http_req_duration_p99)",
+          "legendFormat": "{{scenario}} max group p99",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 33,
+      "type": "timeseries",
+      "title": "k6 VUs and failed requests",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus-lab3"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 65,
+        "w": 8,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "sum(k6_vus)",
+          "legendFormat": "VUs",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus-lab3"
+          },
+          "expr": "max by (scenario) (k6_http_req_failed_rate)",
+          "legendFormat": "failed rate {{scenario}}",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "mean",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    }
+  ],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  }
+}
