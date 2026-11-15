@@ -1,0 +1,25 @@
+[Unit]
+Description=Prometheus - NBD Lab 5
+Documentation=https://prometheus.io/docs/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=prometheus
+Group=prometheus
+ExecStart=/usr/local/bin/prometheus \
+  --config.file={{ prometheus_lab5_dir }}/prometheus.yml \
+  --storage.tsdb.path={{ prometheus_lab5_data }} \
+  --storage.tsdb.retention.time={{ prometheus_lab5_retention }} \
+  --web.listen-address=127.0.0.1:{{ prometheus_lab5_port }}
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths={{ prometheus_lab5_data }}
+
+[Install]
+WantedBy=multi-user.target

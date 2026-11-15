@@ -1,0 +1,24 @@
+global:
+  scrape_interval: {{ prometheus_lab5_interval }}
+  evaluation_interval: {{ prometheus_lab5_interval }}
+  external_labels:
+    lab: nbd-lab5
+
+rule_files:
+  - {{ prometheus_lab5_dir }}/rules.yml
+
+scrape_configs:
+  - job_name: qdrant
+    authorization:
+      type: Bearer
+      credentials_file: {{ prometheus_lab5_dir }}/qdrant.key
+    static_configs:
+      - targets: ["127.0.0.1:{{ qdrant_http_port }}"]
+
+  - job_name: product-search
+    static_configs:
+      - targets: ["127.0.0.1:{{ search_port }}"]
+
+  - job_name: prometheus-lab5
+    static_configs:
+      - targets: ["127.0.0.1:{{ prometheus_lab5_port }}"]

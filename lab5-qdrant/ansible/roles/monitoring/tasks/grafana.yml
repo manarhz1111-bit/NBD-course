@@ -1,0 +1,117 @@
+---
+- name: Look for the Grafana installation from the earlier labs
+  ansible.builtin.stat:
+    path: /usr/share/grafana/bin/grafana
+  register: grafana_binary
+
+- name: Install Grafana OSS {{ grafana_version }}
+  when: not grafana_binary.stat.exists
+  block:
+    - name: Install Grafana package prerequisites
+      ansible.builtin.apt:
+        name: [adduser, libfontconfig1, musl]
+        state: present
+
+    - name: Create the download directory
+      ansible.builtin.file:
+        path: /opt/src
+        state: directory
+        mode: "0755"
+
+    - name: Download the Grafana package
+      ansible.builtin.get_url:
+        url: "{{ grafana_deb_url }}"
+        dest: "/opt/src/grafana_{{ grafana_version }}_linux_amd64.deb"
+        checksum: "sha256:{{ grafana_sha256 }}"
+        mode: "0644"
+
+    - name: Install the Grafana package
+      ansible.builtin.apt:
+        deb: "/opt/src/grafana_{{ grafana_version }}_linux_amd64.deb"
+        state: present
+
+    - name: Bind Grafana to localhost
+      ansible.builtin.lineinfile:
+        path: /etc/grafana/grafana.ini
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+      loop:
+        - { regexp: '^;?http_addr =', line: 'http_addr = 127.0.0.1' }
+        - { regexp: '^;?http_port =', line: 'http_port = {{ grafana_port }}' }
+      notify: Restart Grafana
+
+- name: Give the plugin directory to Grafana
+  ansible.builtin.file:
+    path: "{{ grafana_plugins_dir }}"
+    state: directory
+    owner: grafana
+    group: grafana
+    mode: "0755"
+
+- name: Look for the Prometheus data source plugin
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  register: grafana_prometheus_plugin
+  loop:
+    - "{{ grafana_plugins_dir }}/prometheus/plugin.json"
+    - /usr/share/grafana/public/app/plugins/datasource/prometheus/plugin.json
+
+- name: Install the Prometheus data source plugin
+  when: grafana_prometheus_plugin.results | selectattr('stat.exists') | list | length == 0
+  block:
+    - name: Install the plugin with grafana cli
+      ansible.builtin.command:
+        cmd: grafana cli --homepath /usr/share/grafana --pluginsDir {{ grafana_plugins_dir }} plugins install prometheus
+      changed_when: true
+      notify: Restart Grafana
+
+    - name: Give the plugin files to Grafana
+      ansible.builtin.file:
+        path: "{{ grafana_plugins_dir }}/prometheus"
+        owner: grafana
+        group: grafana
+        recurse: true
+
+- name: Enable and start Grafana
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    enabled: true
+    state: started
+
+- name: Create the dashboard directory
+  ansible.builtin.file:
+    path: "{{ grafana_dashboards_dir }}"
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0750"
+
+- name: Provision the Prometheus Lab 5 data source
+  ansible.builtin.template:
+    src: datasource.yml.j2
+    dest: /etc/grafana/provisioning/datasources/prometheus-lab5.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Provision the dashboard folder
+  ansible.builtin.template:
+    src: dashboards.yml.j2
+    dest: /etc/grafana/provisioning/dashboards/nbd-lab5.yml
+    owner: root
+    group: grafana
+    mode: "0640"
+  notify: Restart Grafana
+
+- name: Copy the dashboards
+  ansible.builtin.copy:
+    src: "{{ grafana_dashboards_source }}/{{ item }}.json"
+    dest: "{{ grafana_dashboards_dir }}/nbd-lab5-{{ item }}.json"
+    owner: root
+    group: grafana
+    mode: "0640"
+  loop: "{{ grafana_dashboards }}"
+
+- name: Apply Grafana changes now
+  ansible.builtin.meta: flush_handlers

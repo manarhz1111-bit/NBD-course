@@ -1,0 +1,23 @@
+[Unit]
+Description=Qdrant vector database - NBD Lab 5
+Documentation=https://qdrant.tech/documentation/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ qdrant_user }}
+Group={{ qdrant_user }}
+WorkingDirectory={{ qdrant_home }}
+ExecStart=/usr/bin/qdrant --config-path {{ qdrant_config }}
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths={{ qdrant_home }}
+
+[Install]
+WantedBy=multi-user.target

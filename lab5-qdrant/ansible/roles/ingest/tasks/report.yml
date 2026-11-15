@@ -1,0 +1,81 @@
+---
+- name: Wait until the HNSW index is built and read the collection
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}"
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+  register: ingest_info
+  until: ingest_info.json.result.status == 'green'
+  retries: 120
+  delay: 5
+
+- name: Count products per payload value
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}/facet"
+    method: POST
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+    body_format: json
+    body: { key: "{{ item }}", exact: true, limit: 8 }
+  register: ingest_facets
+  loop: [category, product_class]
+
+- name: Read one stored point
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}/points/scroll"
+    method: POST
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+    body_format: json
+    body:
+      limit: 1
+      with_payload: true
+      with_vector: [bm25]
+      filter: { must: [{ key: rating, range: { gte: 4.5 } }, { key: reviews, range: { gte: 100 } }] }
+  register: ingest_sample
+
+- name: Count well rated products
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}/points/count"
+    method: POST
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+    body_format: json
+    body: { exact: true, filter: { must: [{ key: rating, range: { gte: 4.5 } }] } }
+  register: ingest_rated
+
+- name: Report the data organisation
+  vars:
+    info: "{{ ingest_info.json.result }}"
+    params: "{{ info.config.params }}"
+    hnsw: "{{ info.config.hnsw_config }}"
+    point: "{{ ingest_sample.json.result.points | first | default({}) }}"
+    indexes: "{{ info.payload_schema | dict2items }}"
+    by_category: "{{ ingest_facets.results[0].json.result.hits }}"
+    by_class: "{{ ingest_facets.results[1].json.result.hits }}"
+  ansible.builtin.assert:
+    that:
+      - info.status == 'green'
+      - info.points_count | int > 0
+      - params.vectors.dense.distance == 'Cosine'
+      - params.sparse_vectors.bm25.modifier == 'idf'
+    success_msg:
+      - >-
+        COLLECTION {{ qdrant_collection }}: status {{ info.status }}, {{ info.points_count }} points,
+        {{ info.segments_count }} segments, {{ info.indexed_vectors_count }} indexed vectors
+      - >-
+        dense vector: {{ params.vectors.dense.size }} dims, {{ params.vectors.dense.distance }};
+        sparse vector bm25: modifier {{ params.sparse_vectors.bm25.modifier }}
+      - >-
+        HNSW m={{ hnsw.m }} ef_construct={{ hnsw.ef_construct }} full_scan_threshold={{ hnsw.full_scan_threshold }} KB;
+        payload on disk: {{ params.on_disk_payload }}
+      - "payload indexes: {{ indexes | map(attribute='key') | zip(indexes | map(attribute='value.data_type')) | map('join', ':') | join(', ') }}"
+      - "top categories: {{ by_category | map(attribute='value') | zip(by_category | map(attribute='count')) | map('join', '=') | join(', ') }}"
+      - "top classes: {{ by_class | map(attribute='value') | zip(by_class | map(attribute='count')) | map('join', '=') | join(', ') }}"
+      - "rating >= 4.5: {{ ingest_rated.json.result.count }} products"
+      - >-
+        sample point {{ point.id | default('-') }}: payload keys {{ point.payload | default({}) | list | join(', ') }};
+        bm25 terms {{ point.vector.bm25.indices | default([]) | length }}
+      - >-
+        sample: {{ point.payload.name | default('-') }} ({{ point.payload.category | default('-') }},
+        rating {{ point.payload.rating | default('-') }}, {{ point.payload.reviews | default('-') }} reviews)

@@ -1,0 +1,43 @@
+---
+- name: Create the search system user
+  ansible.builtin.user:
+    name: "{{ search_user }}"
+    system: true
+    create_home: false
+    home: "{{ search_home }}/home"
+    shell: /usr/sbin/nologin
+
+- name: Create the application directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ search_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ search_home }}", owner: root, mode: "0755" }
+    - { path: "{{ search_home }}/app", owner: root, mode: "0755" }
+    - { path: "{{ search_home }}/data", owner: root, mode: "0750" }
+    - { path: "{{ search_home }}/models", owner: "{{ search_user }}", mode: "0750" }
+    - { path: "{{ search_home }}/home", owner: "{{ search_user }}", mode: "0750" }
+    - { path: "{{ search_home }}/home/.ansible", owner: "{{ search_user }}", mode: "0700" }
+    - { path: "{{ search_home }}/home/.ansible/tmp", owner: "{{ search_user }}", mode: "0700" }
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Copy the search package
+  ansible.builtin.copy:
+    src: "{{ ingest_app_source }}/{{ item }}"
+    dest: "{{ search_home }}/app/"
+    owner: root
+    group: root
+    mode: u=rwX,g=rX,o=rX
+  loop: [shopsearch, requirements.txt]
+  register: search_app_copy
+
+- name: Install the Python dependencies into a virtualenv
+  ansible.builtin.pip:
+    requirements: "{{ search_home }}/app/requirements.txt"
+    virtualenv: "{{ search_home }}/venv"
+    virtualenv_command: python3 -m venv
+  register: search_venv

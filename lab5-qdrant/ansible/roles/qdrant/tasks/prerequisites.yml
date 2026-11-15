@@ -1,0 +1,35 @@
+---
+- name: Require the Qdrant keys from the vault
+  ansible.builtin.assert:
+    that:
+      - qdrant_admin_key | length >= qdrant_min_key_length
+      - qdrant_read_key | length >= qdrant_min_key_length
+      - qdrant_admin_key != qdrant_read_key
+    fail_msg: "set two different keys of at least {{ qdrant_min_key_length }} characters in group_vars/all/vault.yml"
+    quiet: true
+  no_log: true
+
+- name: Require enough memory for Qdrant next to the other labs
+  ansible.builtin.assert:
+    that: ansible_facts['memtotal_mb'] >= qdrant_min_memory_mb
+    fail_msg: "{{ ansible_facts['memtotal_mb'] }} MB RAM, at least {{ qdrant_min_memory_mb }} MB needed"
+    quiet: true
+
+- name: Install the base tools
+  ansible.builtin.apt:
+    name: [iproute2, curl, python3-venv]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Find listeners on the Qdrant ports
+  ansible.builtin.command:
+    cmd: "ss -H -ltnp '( sport = :{{ qdrant_http_port }} or sport = :{{ qdrant_grpc_port }} )'"
+  register: qdrant_port_owners
+  changed_when: false
+
+- name: Require the ports to be free or already used by Qdrant
+  ansible.builtin.assert:
+    that: qdrant_port_owners.stdout_lines | reject('search', 'qdrant') | list | length == 0
+    fail_msg: "{{ qdrant_port_owners.stdout_lines }}"
+    quiet: true

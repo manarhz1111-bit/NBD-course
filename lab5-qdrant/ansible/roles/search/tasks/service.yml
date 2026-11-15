@@ -1,0 +1,59 @@
+---
+- name: Find listeners on the search port
+  ansible.builtin.command:
+    cmd: "ss -H -ltnp '( sport = :{{ search_port }} )'"
+  register: search_port_owner
+  changed_when: false
+
+- name: Require the port to be free or already used by the search API
+  ansible.builtin.assert:
+    that: search_port_owner.stdout_lines | reject('search', 'python|uvicorn') | list | length == 0
+    fail_msg: "{{ search_port_owner.stdout_lines }}"
+    quiet: true
+
+- name: Create the configuration directory
+  ansible.builtin.file:
+    path: "{{ search_env_dir }}"
+    state: directory
+    owner: root
+    group: "{{ search_user }}"
+    mode: "0750"
+
+- name: Write the service environment with the read-only key
+  ansible.builtin.template:
+    src: search.env.j2
+    dest: "{{ search_env_file }}"
+    owner: root
+    group: "{{ search_user }}"
+    mode: "0640"
+  no_log: true
+  notify: Restart search API
+
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: lab5-search.service.j2
+    dest: /etc/systemd/system/lab5-search.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart search API
+
+- name: Restart the API when the code or the collection changed
+  ansible.builtin.debug:
+    msg: "application or collection changed, the API will be restarted"
+  changed_when: true
+  notify: Restart search API
+  when: >-
+    (search_app_copy | default({})) is changed
+    or (search_venv | default({})) is changed
+    or (ingest_result | default({})) is changed
+
+- name: Enable and start the search API
+  ansible.builtin.systemd_service:
+    name: lab5-search
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply search API changes now
+  ansible.builtin.meta: flush_handlers

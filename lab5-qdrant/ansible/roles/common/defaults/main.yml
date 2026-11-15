@@ -1,0 +1,32 @@
+---
+lab5_root: "{{ playbook_dir | dirname }}"
+
+qdrant_version: "1.20.0"
+qdrant_http_port: 6333
+qdrant_grpc_port: 6334
+qdrant_url: "http://127.0.0.1:{{ qdrant_http_port }}"
+qdrant_collection: products
+qdrant_admin_key: "{{ vault_qdrant_admin_key }}"
+qdrant_read_key: "{{ vault_qdrant_read_key }}"
+
+search_user: lab5search
+search_home: /opt/lab5-search
+search_port: 8085
+search_url: "http://127.0.0.1:{{ search_port }}"
+catalog_size: 12000
+search_python: "{{ search_home }}/venv/bin/python"
+search_env:
+  QDRANT_URL: "{{ qdrant_url }}"
+  QDRANT_COLLECTION: "{{ qdrant_collection }}"
+  MODEL_DIR: "{{ search_home }}/models"
+  DATA_DIR: "{{ search_home }}/data"
+  CATALOG_SIZE: "{{ catalog_size }}"
+  EMBED_THREADS: "{{ [ansible_facts['processor_vcpus'] | default(2) | int, 4] | min }}"
+  HF_HOME: "{{ search_home }}/models/hf"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+prometheus_lab5_port: 9095
+grafana_port: 3000
+grafana_url: "http://127.0.0.1:{{ grafana_port }}"
+
+lab5_http_status: [200, 400, 401, 403, 404, 409, 500, 503]

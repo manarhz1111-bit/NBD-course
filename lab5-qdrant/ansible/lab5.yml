@@ -1,0 +1,40 @@
+---
+- name: NBD Laboratory 5 - semantic product search with Qdrant
+  hosts: lab5
+  gather_facts: true
+  become: true
+
+  roles:
+    - role: qdrant
+      tags: [part1]
+    - role: ingest
+      tags: [part2]
+    - role: search
+      tags: [part3]
+    - role: monitoring
+      tags: [part4]
+
+  tasks:
+    - name: Measure retrieval quality of dense, sparse and hybrid search
+      ansible.builtin.import_role:
+        name: search
+        tasks_from: evaluate.yml
+      tags: [never, eval]
+
+    - name: Load test the search API and Qdrant
+      ansible.builtin.import_role:
+        name: search
+        tasks_from: loadtest.yml
+      tags: [never, loadtest]
+
+    - name: Compare HNSW settings and quantization on synthetic vectors
+      ansible.builtin.import_role:
+        name: search
+        tasks_from: bench.yml
+      tags: [never, bench]
+
+    - name: Take a snapshot of the product collection
+      ansible.builtin.import_role:
+        name: qdrant
+        tasks_from: snapshot.yml
+      tags: [never, snapshot]

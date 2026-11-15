@@ -1,0 +1,25 @@
+---
+- name: Create a snapshot of the collection
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}/snapshots?wait=true"
+    method: POST
+    headers:
+      api-key: "{{ qdrant_admin_key }}"
+    timeout: 300
+  register: qdrant_snapshot
+
+- name: List the snapshots of the collection
+  ansible.builtin.uri:
+    url: "{{ qdrant_url }}/collections/{{ qdrant_collection }}/snapshots"
+    headers:
+      api-key: "{{ qdrant_read_key }}"
+  register: qdrant_snapshots
+
+- name: Report the snapshots
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['created ' ~ qdrant_snapshot.json.result.name ~ ' (' ~ (qdrant_snapshot.json.result.size / 1048576) | round(2) ~ ' MiB) in '
+          ~ qdrant_home ~ '/snapshots/' ~ qdrant_collection]
+         + (qdrant_snapshots.json.result | map(attribute='name')
+            | zip(qdrant_snapshots.json.result | map(attribute='size') | map('human_readable'))
+            | map('join', ', ') | list) }}

@@ -1,0 +1,16 @@
+---
+- name: Check the host before installing Qdrant
+  ansible.builtin.import_tasks: prerequisites.yml
+  tags: [part1_check]
+
+- name: Install the Qdrant package
+  ansible.builtin.import_tasks: install.yml
+  tags: [part1_install]
+
+- name: Configure and start Qdrant
+  ansible.builtin.import_tasks: configure.yml
+  tags: [part1_configure]
+
+- name: Verify Qdrant and its access keys
+  ansible.builtin.import_tasks: verify.yml
+  tags: [part1_verify]

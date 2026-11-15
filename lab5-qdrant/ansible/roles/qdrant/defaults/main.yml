@@ -1,0 +1,9 @@
+---
+qdrant_deb_url: "https://github.com/qdrant/qdrant/releases/download/v{{ qdrant_version }}/qdrant_{{ qdrant_version }}-1_amd64.deb"
+qdrant_deb_sha256: "b5487dd5d1db53442c0b4b24f8d3ed5a22226b8fd4d293b1d620a86329a66f6a"
+qdrant_user: qdrant
+qdrant_home: /var/lib/qdrant
+qdrant_config: /etc/qdrant/config.yaml
+qdrant_min_memory_mb: 3500
+qdrant_min_key_length: 24
+qdrant_max_request_size_mb: 64

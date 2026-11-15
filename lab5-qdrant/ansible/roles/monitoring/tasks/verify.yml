@@ -1,0 +1,91 @@
+---
+- name: Wait until every scrape target is up
+  ansible.builtin.uri:
+    url: "{{ prometheus_lab5_url }}/api/v1/targets?state=active"
+    return_content: true
+  register: prometheus_targets
+  until: >-
+    prometheus_targets.json.data.activeTargets | default([])
+    | selectattr('health', 'eq', 'up') | map(attribute='labels.job') | unique | sort
+    == prometheus_lab5_jobs | sort
+  retries: 24
+  delay: 5
+
+- name: Read the loaded alerting and recording rules
+  ansible.builtin.uri:
+    url: "{{ prometheus_lab5_url }}/api/v1/rules"
+    return_content: true
+  register: prometheus_rules
+
+- name: Ask Prometheus for the collection size
+  ansible.builtin.uri:
+    url: "{{ prometheus_lab5_url }}/api/v1/query?{{ {'query': 'collection_points{id=\"' ~ qdrant_collection ~ '\"}'} | urlencode }}"
+    return_content: true
+  register: prometheus_points
+  until: prometheus_points.json.data.result | length > 0
+  retries: 12
+  delay: 5
+
+- name: Report Prometheus Lab 5
+  ansible.builtin.debug:
+    msg: >-
+      {{ ['PROMETHEUS LAB 5: ' ~ prometheus_lab5_url ~ ', ' ~ (prometheus_rules.json.data.groups | map(attribute='rules') | flatten | length) ~ ' rules, '
+          ~ qdrant_collection ~ ' has ' ~ prometheus_points.json.data.result[0].value[1] ~ ' points']
+         + (prometheus_targets.json.data.activeTargets | map(attribute='labels.job')
+            | zip(prometheus_targets.json.data.activeTargets | map(attribute='scrapeUrl'),
+                  prometheus_targets.json.data.activeTargets | map(attribute='health'))
+            | map('join', ' | ') | list) }}
+
+- name: Wait for the Grafana health endpoint
+  ansible.builtin.uri:
+    url: "{{ grafana_url }}/api/health"
+    return_content: true
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: 60
+  delay: 10
+
+- name: Check the dashboard files
+  ansible.builtin.assert:
+    that:
+      - dashboard.uid == 'nbd-lab5-' ~ item
+      - dashboard.panels | length > 10
+    success_msg: "{{ dashboard.title }}: {{ dashboard.panels | rejectattr('type', 'eq', 'row') | list | length }} panels"
+  loop: "{{ grafana_dashboards }}"
+  vars:
+    dashboard: "{{ lookup('ansible.builtin.file', grafana_dashboards_source ~ '/' ~ item ~ '.json') | from_json }}"
+
+- name: Check the data source and dashboards through the Grafana API
+  when: grafana_admin_password | length > 0
+  block:
+    - name: Run the data source health check
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/datasources/uid/{{ grafana_datasource_uid }}/health"
+        user: "{{ grafana_admin_user }}"
+        password: "{{ grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+        status_code: [200, 400, 404, 500, 503]
+      register: grafana_ds_health
+      until: grafana_ds_health.status == 200
+      retries: 30
+      delay: 10
+
+    - name: Search the provisioned dashboards
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/search?tag=lab5"
+        user: "{{ grafana_admin_user }}"
+        password: "{{ grafana_admin_password }}"
+        force_basic_auth: true
+        return_content: true
+      register: grafana_search
+
+    - name: Report what Grafana sees
+      ansible.builtin.assert:
+        that:
+          - grafana_ds_health.json.status == 'OK'
+          - grafana_search.json | length == grafana_dashboards | length
+        success_msg:
+          - "GRAFANA VERIFIED: {{ grafana_url }} (version {{ grafana_health.json.version }})"
+          - "data source {{ grafana_datasource_uid }}: {{ grafana_ds_health.json.status }} - {{ grafana_ds_health.json.message }}"
+          - "dashboards: {{ grafana_search.json | map(attribute='title') | join(', ') }} in folder {{ grafana_search.json[0].folderTitle | default('?') }}"

@@ -1,0 +1,14 @@
+---
+- name: Build a synthetic collection and measure recall against latency
+  ansible.builtin.command:
+    cmd: "{{ search_python }} -m shopsearch bench --points {{ bench_points }}"
+    chdir: "{{ search_home }}/app"
+  become: true
+  become_user: "{{ search_user }}"
+  environment: "{{ search_env | combine({'QDRANT_API_KEY': qdrant_admin_key, 'HF_HUB_OFFLINE': '1', 'SEARCH_URL': search_url}) }}"
+  register: search_run
+  changed_when: true
+
+- name: Report the benchmark
+  ansible.builtin.debug:
+    msg: "{{ search_run.stdout_lines }}"
